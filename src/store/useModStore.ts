@@ -16,8 +16,8 @@ interface ModState {
   setError: (msg: string | null) => void;
   toggleMod: (fileId: number, enabled: boolean) => void;
   updateModSettings: (key: string, settings: Record<string, unknown>) => void;
-  /** Swap order value with adjacent mod (direction: -1 up, +1 down) */
-  reorderMods: (key: string, direction: -1 | 1) => void;
+  /** Directly set a mod's load order */
+  setModOrder: (key: string, order: number) => void;
   clearMods: () => void;
   selectMod: (key: string | null) => void;
 }
@@ -45,37 +45,14 @@ export const useModStore = create<ModState>((set) => ({
           : m
       ),
     })),
-  reorderMods: (key, direction) =>
-    set((s) => {
-      // Sort by current order, using natural position as tiebreaker
-      const sorted = s.mods
-        .map((m, idx) => ({ m, idx }))
-        .sort((a, b) => (a.m.order || 999) - (b.m.order || 999) || a.idx - b.idx);
-      const pos = sorted.findIndex(
-        (x) => `${x.m.source}_${x.m.fileId}` === key,
-      );
-      if (pos === -1) return s;
-      const targetPos = pos + direction;
-      if (targetPos < 0 || targetPos >= sorted.length) return s;
-
-      // Swap order values between the two mods
-      const modA = sorted[pos].m;
-      const modB = sorted[targetPos].m;
-      const orderA = modA.order || (pos + 1);
-      const orderB = modB.order || (targetPos + 1);
-
-      const keyA = `${modA.source}_${modA.fileId}`;
-      const keyB = `${modB.source}_${modB.fileId}`;
-
-      return {
-        mods: s.mods.map((m) => {
-          const mk = `${m.source}_${m.fileId}`;
-          if (mk === keyA) return { ...m, order: orderB };
-          if (mk === keyB) return { ...m, order: orderA };
-          return m;
-        }),
-      };
-    }),
+  setModOrder: (key, order) =>
+    set((s) => ({
+      mods: s.mods.map((m) =>
+        `${m.source}_${m.fileId}` === key
+          ? { ...m, order: Math.max(0, Math.floor(order)) }
+          : m
+      ),
+    })),
   clearMods: () => set({ mods: [], error: null, selectedModKey: null }),
   selectMod: (key) => set({ selectedModKey: key }),
 }));

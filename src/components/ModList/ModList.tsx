@@ -12,7 +12,7 @@ interface Props {
   onSelectMod: (key: string) => void;
 }
 
-type SortKey = "name" | "enabled" | "order";
+type SortKey = "name" | "enabled" | "custom";
 
 // Filter categories based on source + residual status
 const FILTER_CATEGORIES = [
@@ -25,35 +25,106 @@ const FILTER_CATEGORIES = [
 type CategoryKey = (typeof FILTER_CATEGORIES)[number]["key"];
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "custom", label: "自定义排序" },
   { value: "name", label: "名称" },
   { value: "enabled", label: "启用优先" },
-  { value: "order", label: "排序优先" },
 ];
+
+const PREFS_KEY = "twm-filter-prefs";
+
+interface FilterPrefs {
+  sortKey: SortKey;
+  activeCategories: CategoryKey[];
+  tagMode: "or" | "and";
+}
+
+function loadPrefs(): FilterPrefs | null {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as FilterPrefs;
+  } catch {
+    return null;
+  }
+}
+
+function savePrefs(prefs: FilterPrefs): void {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // localStorage may be full or unavailable
+  }
+}
 
 export default function ModList({ gamePath, onSelectMod }: Props) {
   const mods = useModStore((s) => s.mods);
   const scanning = useModStore((s) => s.scanning);
   const error = useModStore((s) => s.error);
   const toggleMod = useModStore((s) => s.toggleMod);
-  const reorderMods = useModStore((s) => s.reorderMods);
+  const setModOrder = useModStore((s) => s.setModOrder);
   const setLastMessage = useAppStore((s) => s.setLastMessage);
   const templateRaw = useAppStore((s) => s.templateRaw);
   const [saving, setSaving] = useState(false);
 
   const [search, setSearch] = useState("");
   const [enabledFilter, setEnabledFilter] = useState<"all" | "enabled" | "disabled">("all");
-  const [sortKey, setSortKey] = useState<SortKey>("order");
-  // Multi-select categories — all selected by default
-  const [activeCategories, setActiveCategories] = useState<Set<CategoryKey>>(
-    () => new Set(FILTER_CATEGORIES.map((c) => c.key)),
-  );
+  const [sortKey, setSortKey] = useState<SortKey>(() => {
+    const cached = loadPrefs();
+    return cached?.sortKey ?? "custom";
+  });
+  // Multi-select categories — only normal (non-residual) checked by default
+  const [activeCategories, setActiveCategories] = useState<Set<CategoryKey>>(() => {
+    const cached = loadPrefs();
+    if (cached?.activeCategories) return new Set(cached.activeCategories);
+    return new Set(FILTER_CATEGORIES.filter((c) => !c.residual).map((c) => c.key));
+  });
   const [catDropdownOpen, setCatDropdownOpen] = useState(false);
   const catDropdownRef = useRef<HTMLDivElement>(null);
   // Tag multi-select
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
-  const [tagMode, setTagMode] = useState<"or" | "and">("or");
+  const [tagMode, setTagMode] = useState<"or" | "and">(() => {
+    const cached = loadPrefs();
+    return cached?.tagMode ?? "or";
+  });
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
+  // Custom display order (mod keys)
+  const [displayOrder, setDisplayOrder] = useState<string[]>([]);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [dragState, setDragState] = useState<{
+    sourceKey: string;
+    sourceIdx: number;
+    currentIdx: number;
+    startY: number;
+    started: boolean;
+  } | null>(null);
+  const dragStateRef = useRef(dragState);
+  dragStateRef.current = dragState;
+  const preventClickRef = useRef(false);
+  const dragCardHeightRef = useRef(96);
+  const cardPositionsRef = useRef<Map<string, { top: number; midY: number; height: number }>>(new Map());
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
+  const scrollSnapshotRef = useRef(0); // container.scrollTop at drag start
+  const containerRectSnapshotRef = useRef<{ top: number; bottom: number }>({ top: 0, bottom: 0 });
+
+  // Sync displayOrder when mods change (new mods appended)
+  useEffect(() => {
+    setDisplayOrder((prev) => {
+      const allKeys = mods.map((m) => `${m.source}_${m.fileId}`);
+      // Remove keys no longer in mods
+      const filtered = prev.filter((k) => allKeys.includes(k));
+      // Append new mods at the end
+      const existing = new Set(filtered);
+      for (const k of allKeys) {
+        if (!existing.has(k)) filtered.push(k);
+      }
+      // If nothing changed, return prev to avoid re-render
+      if (filtered.length === prev.length && filtered.every((k, i) => k === prev[i])) {
+        return prev;
+      }
+      return filtered;
+    });
+  }, [mods]);
 
   // All unique tags across all mods, sorted
   const allTags = useMemo(() => {
@@ -77,6 +148,15 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
     }
     return () => document.removeEventListener("mousedown", handler);
   }, [catDropdownOpen, tagDropdownOpen]);
+
+  // Persist filter preferences to localStorage
+  useEffect(() => {
+    savePrefs({
+      sortKey,
+      activeCategories: [...activeCategories],
+      tagMode,
+    });
+  }, [sortKey, activeCategories, tagMode]);
 
   // Three-state toggle: all → enabled → disabled → all
   const cycleEnabledFilter = () => {
@@ -140,26 +220,25 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
         case "enabled":
           return (b.enabled ? 1 : 0) - (a.enabled ? 1 : 0) ||
             a.title.localeCompare(b.title, "zh");
-        case "order":
-          return (a.order || 999) - (b.order || 999);
+        case "custom": {
+          // Sort by user-defined displayOrder, then by name for unlisted
+          const idxA = displayOrder.indexOf(`${a.source}_${a.fileId}`);
+          const idxB = displayOrder.indexOf(`${b.source}_${b.fileId}`);
+          const rankA = idxA === -1 ? Infinity : idxA;
+          const rankB = idxB === -1 ? Infinity : idxB;
+          return rankA - rankB || a.title.localeCompare(b.title, "zh");
+        }
         default:
           return 0;
       }
     });
 
     return result;
-  }, [mods, search, enabledFilter, sortKey, fuse, activeCategories, activeTags, tagMode]);
+  }, [mods, search, enabledFilter, sortKey, fuse, activeCategories, activeTags, tagMode, displayOrder]);
 
-  const handleMoveMod = useCallback(
-    async (key: string, direction: -1 | 1) => {
-      // Switch to order sort if not already
-      if (sortKey !== "order") setSortKey("order");
-
-      reorderMods(key, direction);
-
-      // Save to ModSettings.Lua
-      const updatedMods = useModStore.getState().mods;
-      const data = collectModSettingsData(updatedMods);
+  const saveModSettings = useCallback(
+    async () => {
+      const data = collectModSettingsData(useModStore.getState().mods);
       const lua = templateRaw
         ? patchModSettingsLua(templateRaw, data)
         : generateModSettingsLua(data);
@@ -173,25 +252,156 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
         setSaving(false);
       }
     },
-    [gamePath, reorderMods, setLastMessage, templateRaw, sortKey],
+    [gamePath, setLastMessage, templateRaw],
   );
 
-  // Compute order display (only when sorted by order)
-  const orderPositions = useMemo(() => {
-    if (sortKey !== "order") return null;
-    const sorted = [...mods]
-      .map((m, idx) => ({ m, idx }))
-      .sort((a, b) => (a.m.order || 999) - (b.m.order || 999) || a.idx - b.idx);
-    const map = new Map<string, { num: number; first: boolean; last: boolean }>();
-    sorted.forEach((x, i) => {
-      map.set(`${x.m.source}_${x.m.fileId}`, {
-        num: i + 1,
-        first: i === 0,
-        last: i === sorted.length - 1,
+  const handleOrderChange = useCallback(
+    (key: string, order: number) => {
+      setModOrder(key, order);
+      saveModSettings();
+    },
+    [setModOrder, saveModSettings],
+  );
+
+  // Custom drag-and-drop (mouse-based, avoids HTML5 DnD browser quirks)
+  const DRAG_THRESHOLD = 5;
+
+  const handleDragMouseDown = useCallback(
+    (e: React.MouseEvent, key: string) => {
+      if (sortKey !== "custom") return;
+      const idx = displayOrder.indexOf(key);
+      if (idx === -1) return;
+      e.preventDefault();
+      preventClickRef.current = true;
+
+      // Snapshot all card positions BEFORE placeholder changes layout
+      if (listRef.current) {
+        // Find the actual scrollable container (the overflow-y-auto parent)
+        let el: HTMLElement | null = listRef.current.parentElement;
+        while (el) {
+          const style = window.getComputedStyle(el);
+          if (style.overflowY === "auto" || style.overflowY === "scroll") break;
+          el = el.parentElement;
+        }
+        scrollContainerRef.current = el;
+
+        const positions = new Map<string, { top: number; midY: number; height: number }>();
+        const children = listRef.current.querySelectorAll("[data-mod-key]");
+        children.forEach((child) => {
+          const k = child.getAttribute("data-mod-key")!;
+          const rect = child.getBoundingClientRect();
+          positions.set(k, { top: rect.top, midY: rect.top + rect.height / 2, height: rect.height });
+        });
+        cardPositionsRef.current = positions;
+        scrollSnapshotRef.current = el ? el.scrollTop : 0;
+        if (el) {
+          const cr = el.getBoundingClientRect();
+          containerRectSnapshotRef.current = { top: cr.top, bottom: cr.bottom };
+        }
+        // Use the dragged card's measured height for placeholder
+        const draggedPos = positions.get(key);
+        if (draggedPos) dragCardHeightRef.current = draggedPos.height;
+      }
+
+      setDragState({
+        sourceKey: key,
+        sourceIdx: idx,
+        currentIdx: idx,
+        startY: e.clientY,
+        started: false,
       });
-    });
-    return map;
-  }, [mods, sortKey]);
+    },
+    [sortKey, displayOrder],
+  );
+
+  // Attach global mousemove/mouseup via useEffect to avoid missing events
+  useEffect(() => {
+    if (!dragState) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const ds = dragStateRef.current;
+      if (!ds) return;
+
+      const dy = Math.abs(e.clientY - ds.startY);
+      if (!ds.started && dy < DRAG_THRESHOLD) return;
+
+      const container = scrollContainerRef.current;
+
+      // Auto-scroll when dragging near scroll-container edges
+      const SCROLL_ZONE = 80;
+      const SCROLL_SPEED = 12;
+      if (container) {
+        const cr = containerRectSnapshotRef.current;
+        const topEdge = cr.top + SCROLL_ZONE;
+        const bottomEdge = cr.bottom - SCROLL_ZONE;
+        if (e.clientY < topEdge) {
+          const speed = ((topEdge - e.clientY) / SCROLL_ZONE) * SCROLL_SPEED;
+          container.scrollBy(0, -speed);
+        } else if (e.clientY > bottomEdge) {
+          const speed = ((e.clientY - bottomEdge) / SCROLL_ZONE) * SCROLL_SPEED;
+          container.scrollBy(0, speed);
+        }
+      }
+
+      // Use snapshotted positions so placeholder layout changes don't cause flicker
+      // Adjust for scroll that happened since snapshot (auto-scroll + manual wheel)
+      const scrollDelta = container ? container.scrollTop - scrollSnapshotRef.current : 0;
+      const positions = cardPositionsRef.current;
+      let closestKey: string | null = null;
+      let closestDist = Infinity;
+      positions.forEach((pos, k) => {
+        const adjustedMidY = pos.midY - scrollDelta;
+        const dist = Math.abs(e.clientY - adjustedMidY);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closestKey = k;
+        }
+      });
+
+      if (!closestKey) return;
+      const displayIdx = displayOrder.indexOf(closestKey);
+      if (displayIdx === -1) return;
+
+      setDragState((prev) =>
+        prev
+          ? {
+              ...prev,
+              started: true,
+              currentIdx: displayIdx !== prev.currentIdx ? displayIdx : prev.currentIdx,
+            }
+          : null,
+      );
+    };
+
+    const handleMouseUp = () => {
+      const ds = dragStateRef.current;
+      setDragState(null);
+      if (ds?.started) {
+        // Drag occurred — suppress the pending click, clear flag after event
+        setTimeout(() => {
+          preventClickRef.current = false;
+        }, 0);
+        if (ds.sourceIdx !== ds.currentIdx) {
+          setDisplayOrder((prev) => {
+            const next = [...prev];
+            const [item] = next.splice(ds.sourceIdx, 1);
+            next.splice(ds.currentIdx, 0, item);
+            return next;
+          });
+        }
+      } else {
+        // No movement — allow the click to proceed
+        preventClickRef.current = false;
+      }
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [dragState, displayOrder]);
 
   const handleToggle = useCallback(
     async (fileId: number, enabled: boolean) => {
@@ -266,7 +476,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div ref={listRef} className="flex flex-col gap-3">
       {/* Search / Filter / Sort bar */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-48">
@@ -446,31 +656,69 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
           没有匹配的 Mod
         </p>
       ) : (
-        filtered.map((mod) => {
-          const key = `${mod.source}_${mod.fileId}`;
-          const orderInfo = orderPositions?.get(key);
-          return (
-            <ModCard
-              key={key}
-              mod={mod}
-              disabled={saving}
-              onToggle={handleToggle}
-              onSelect={() => onSelectMod(key)}
-              showOrder={sortKey === "order"}
-              orderNum={orderInfo?.num}
-              canMoveUp={orderInfo ? !orderInfo.first : false}
-              canMoveDown={orderInfo ? !orderInfo.last : false}
-              onMoveUp={(e) => {
-                e.stopPropagation();
-                handleMoveMod(key, -1);
-              }}
-              onMoveDown={(e) => {
-                e.stopPropagation();
-                handleMoveMod(key, 1);
-              }}
-            />
-          );
-        })
+        (() => {
+          const isCustomSort = sortKey === "custom";
+          const ds = isCustomSort ? dragState : null;
+          const active = ds?.started;
+
+          // Map displayOrder currentIdx to filtered index for slot placement
+          let slotFilteredIdx = -1;
+          if (active && ds!.sourceIdx !== ds!.currentIdx) {
+            const targetKey = displayOrder[ds!.currentIdx];
+            if (targetKey) {
+              slotFilteredIdx = filtered.findIndex(
+                (m) => `${m.source}_${m.fileId}` === targetKey,
+              );
+            }
+          }
+
+          return filtered.map((mod, index) => {
+            const key = `${mod.source}_${mod.fileId}`;
+            const dragging = active && ds!.sourceKey === key;
+
+            return (
+              <div key={key}>
+                {/* Slot indicator — matches dragged card height */}
+                {index === slotFilteredIdx && (
+                  <div
+                    className="rounded-lg border-2 border-blue-500 border-dashed bg-blue-950/20 animate-pulse"
+                    style={{ height: dragCardHeightRef.current }}
+                  />
+                )}
+                <div
+                  data-mod-key={key}
+                  className={
+                    dragging ? "scale-[0.98] opacity-40 z-10 relative transition-all duration-200" : ""
+                  }
+                >
+                  <ModCard
+                    mod={mod}
+                    disabled={saving}
+                    onToggle={handleToggle}
+                    onSelect={() => {
+                      if (preventClickRef.current) return;
+                      onSelectMod(key);
+                    }}
+                    onOrderUp={(e) => {
+                      e.stopPropagation();
+                      setModOrder(key, mod.order + 1);
+                      saveModSettings();
+                    }}
+                    onOrderDown={(e) => {
+                      e.stopPropagation();
+                      setModOrder(key, Math.max(0, mod.order - 1));
+                      saveModSettings();
+                    }}
+                    onOrderChange={(order) => handleOrderChange(key, order)}
+                    onDragMouseDown={isCustomSort ? handleDragMouseDown : undefined}
+                    isDragging={dragging}
+                    isDragOver={false}
+                  />
+                </div>
+              </div>
+            );
+          });
+        })()
       )}
 
       {/* Footer stats */}

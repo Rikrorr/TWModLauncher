@@ -1,32 +1,53 @@
+import { useState, useEffect, useCallback } from "react";
 import type { ModInfo } from "../../lib/types";
 import { renderColoredText } from "../../utils/renderColoredText";
+import { openInExplorer } from "../../lib/tauriApi";
 
 interface Props {
   mod: ModInfo;
   disabled?: boolean;
   onToggle: (fileId: number, enabled: boolean) => void;
   onSelect: () => void;
-  /** Show order controls (when sorted by order) */
-  showOrder?: boolean;
-  orderNum?: number;
-  canMoveUp?: boolean;
-  canMoveDown?: boolean;
-  onMoveUp?: (e: React.MouseEvent) => void;
-  onMoveDown?: (e: React.MouseEvent) => void;
+  onOrderUp?: (e: React.MouseEvent) => void;
+  onOrderDown?: (e: React.MouseEvent) => void;
+  onOrderChange?: (order: number) => void;
+  /** Custom drag: initiate on mousedown */
+  onDragMouseDown?: (e: React.MouseEvent, key: string) => void;
+  isDragging?: boolean;
+  isDragOver?: boolean;
 }
+
+const INTERACTIVE_SELECTOR = "button, input, label, select, [data-no-drag]";
 
 export default function ModCard({
   mod,
   disabled,
   onToggle,
   onSelect,
-  showOrder,
-  orderNum,
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
+  onOrderUp,
+  onOrderDown,
+  onOrderChange,
+  onDragMouseDown,
+  isDragging,
+  isDragOver,
 }: Props) {
+  const [localOrder, setLocalOrder] = useState(mod.order);
+
+  useEffect(() => {
+    setLocalOrder(mod.order);
+  }, [mod.order]);
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (!onDragMouseDown) return;
+      const target = e.target as HTMLElement;
+      if (target.closest(INTERACTIVE_SELECTOR)) return;
+      const key = `${mod.source}_${mod.fileId}`;
+      onDragMouseDown(e, key);
+    },
+    [onDragMouseDown, mod.source, mod.fileId],
+  );
+
   const sourceLabel = mod.source === 1 ? "创意工坊" : "本地";
   const sourceColor =
     mod.source === 1
@@ -36,41 +57,29 @@ export default function ModCard({
   return (
     <div
       onClick={onSelect}
-      className={`flex items-start gap-4 rounded-lg border p-4 transition-colors cursor-pointer hover:border-slate-500 ${
+      onMouseDown={handleMouseDown}
+      className={`flex items-start gap-4 rounded-lg border p-4 transition-colors hover:border-slate-500 cursor-pointer ${
         mod.enabled
           ? "border-slate-600 bg-slate-800/80"
           : "border-slate-700/50 bg-slate-800/40 opacity-70"
-      } ${mod.parseError ? "border-red-800 bg-red-950/20" : ""}`}
+      } ${mod.parseError ? "border-red-800 bg-red-950/20" : ""} ${
+        isDragging ? "opacity-30" : ""
+      } ${
+        isDragOver ? "border-blue-500 bg-blue-950/30" : ""
+      }`}
     >
-      {/* Enable toggle */}
-      <label
-        onClick={(e) => e.stopPropagation()}
-        className={`relative inline-flex items-center shrink-0 mt-0.5 ${
-          disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
-        }`}
-      >
-        <input
-          type="checkbox"
-          checked={mod.enabled}
-          disabled={disabled}
-          onChange={(e) => onToggle(mod.fileId, e.target.checked)}
-          className="sr-only peer"
-        />
-        <div className="w-9 h-5 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
-      </label>
-
       {/* Cover image */}
       {mod.coverData ? (
         <img
           src={mod.coverData}
           alt=""
-          className="w-20 h-20 rounded object-cover bg-slate-700 shrink-0"
+          className="w-[88px] h-[88px] rounded object-cover bg-slate-700 shrink-0 pointer-events-none"
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = "none";
           }}
         />
       ) : (
-        <div className="w-20 h-20 rounded bg-slate-700 shrink-0 flex items-center justify-center text-slate-500 text-xs">
+        <div className="w-[88px] h-[88px] rounded bg-slate-700 shrink-0 flex items-center justify-center text-slate-500 text-xs">
           无封面
         </div>
       )}
@@ -86,40 +95,12 @@ export default function ModCard({
           >
             {renderColoredText(mod.title)}
           </h3>
-          <span
-            className={`text-[10px] px-1.5 py-0.5 rounded border ${sourceColor}`}
-          >
+          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${sourceColor}`}>
             {sourceLabel}
           </span>
           {mod.parseError && (
             <span className="text-[10px] px-1.5 py-0.5 rounded border bg-red-900/60 text-red-300 border-red-700">
               解析失败
-            </span>
-          )}
-          {showOrder && (
-            <span
-              onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-0.5 text-[10px] text-slate-500 ml-auto shrink-0"
-            >
-              <button
-                disabled={!canMoveUp}
-                onClick={onMoveUp}
-                title="上移"
-                className="text-slate-500 hover:text-slate-200 disabled:opacity-20 disabled:cursor-default cursor-pointer transition-colors px-0.5"
-              >
-                ▲
-              </button>
-              <span className="min-w-4 text-center" title="加载顺序">
-                {(orderNum ?? mod.order) || "-"}
-              </span>
-              <button
-                disabled={!canMoveDown}
-                onClick={onMoveDown}
-                title="下移"
-                className="text-slate-500 hover:text-slate-200 disabled:opacity-20 disabled:cursor-default cursor-pointer transition-colors px-0.5"
-              >
-                ▼
-              </button>
             </span>
           )}
         </div>
@@ -129,6 +110,9 @@ export default function ModCard({
           {mod.version && <span>v{mod.version}</span>}
           {mod.gameVersion && (
             <span className="text-slate-500">游戏 {mod.gameVersion}</span>
+          )}
+          {mod.updatedAt && (
+            <span className="text-slate-500">更新 {mod.updatedAt}</span>
           )}
         </div>
 
@@ -153,6 +137,81 @@ export default function ModCard({
             ))}
           </div>
         )}
+      </div>
+
+      {/* Right sidebar: toggle / order / actions */}
+      <div className="flex flex-col items-center gap-3 shrink-0">
+        {/* Enable toggle */}
+        <label
+          onClick={(e) => e.stopPropagation()}
+          className={`relative inline-flex items-center ${
+            disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={mod.enabled}
+            disabled={disabled}
+            onChange={(e) => onToggle(mod.fileId, e.target.checked)}
+            className="sr-only peer"
+          />
+          <div className="w-9 h-5 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
+        </label>
+
+        {/* Order controls */}
+        <div className="flex flex-col items-center gap-0.5">
+          <button
+            onClick={onOrderUp}
+            title="加载顺序 +1"
+            className="text-slate-500 hover:text-slate-200 cursor-pointer transition-colors px-1 text-xs"
+          >
+            ▲
+          </button>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={localOrder}
+            onChange={(e) => {
+              const raw = e.target.value.replace(/^0+/, "");
+              const v = parseInt(raw, 10);
+              setLocalOrder(raw === "" || isNaN(v) ? 0 : v);
+            }}
+            onBlur={() => {
+              const clamped = Math.max(0, Math.floor(localOrder));
+              setLocalOrder(clamped);
+              if (clamped !== mod.order) {
+                onOrderChange?.(clamped);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+            onClick={(e) => e.stopPropagation()}
+            title="加载顺序（可直接输入）"
+            className="w-11 text-center bg-slate-700 border border-slate-600 rounded text-slate-300 text-xs px-1 py-0.5
+                       outline-none focus:border-blue-500 transition-colors"
+          />
+          <button
+            onClick={onOrderDown}
+            title="加载顺序 -1"
+            className="text-slate-500 hover:text-slate-200 cursor-pointer transition-colors px-1 text-xs"
+          >
+            ▼
+          </button>
+        </div>
+
+        {/* Open folder */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            openInExplorer(mod.dirPath).catch(() => {});
+          }}
+          title="打开 Mod 所在文件夹"
+          className="text-[10px] text-slate-600 hover:text-slate-400 cursor-pointer transition-colors"
+        >
+          打开目录
+        </button>
       </div>
     </div>
   );

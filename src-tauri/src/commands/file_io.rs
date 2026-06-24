@@ -17,3 +17,23 @@ pub fn write_file(path: String, content: String) -> Result<(), String> {
 pub fn read_file(path: String) -> Result<String, String> {
     fs::read_to_string(Path::new(&path)).map_err(|e| format!("读取文件失败: {}", e))
 }
+
+/// Open the specified folder in the system file explorer.
+#[tauri::command]
+pub fn open_in_explorer(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("打开失败: {}", e))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("打开失败: {}", e))?;
+    }
+    Ok(())
+}

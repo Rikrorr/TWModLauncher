@@ -13,6 +13,7 @@ export interface ModScanEntry {
   cover_data: string; // Base64 data URL or empty
   config_raw: string;
   settings_raw: string;
+  modified_at: string;
 }
 
 /** Result from scan_mods Rust command */
@@ -44,6 +45,8 @@ export interface ModInfo {
   parseError: boolean;
   /** True if Config.lua is missing or empty (residual workshop folder / empty local mod) */
   isResidual: boolean;
+  /** Last modification timestamp, formatted for display */
+  updatedAt: string;
 }
 
 /** A single setting definition from Config.lua DefaultSettings */

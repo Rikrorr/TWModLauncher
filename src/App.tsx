@@ -5,6 +5,8 @@ import {
   launchGame,
   checkGameRunning,
   writeModSettings,
+  loadConfig,
+  saveConfig,
 } from "./lib/tauriApi";
 import { collectModSettingsData, patchModSettingsLua, generateModSettingsLua } from "./utils/generateModSettings";
 import { useAppStore } from "./store/useAppStore";
@@ -39,6 +41,34 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Auto-load cached game path on startup
+  const [configLoaded, setConfigLoaded] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await loadConfig();
+        const cfg = JSON.parse(raw);
+        if (cfg.gamePath) {
+          const result = await validateGamePath(cfg.gamePath);
+          if (result.path) {
+            setGamePath(result.path, "auto");
+          }
+        }
+      } catch {
+        // No valid cache, silent ignore
+      } finally {
+        setConfigLoaded(true);
+      }
+    })();
+  }, [setGamePath]);
+
+  // Auto-save config when game path changes (only after initial load)
+  useEffect(() => {
+    if (configLoaded && gamePath) {
+      saveConfig(JSON.stringify({ gamePath })).catch(() => {});
+    }
+  }, [gamePath, configLoaded]);
 
   // Auto-scan mods when game path is confirmed
   useEffect(() => {
@@ -201,7 +231,7 @@ function App() {
           太吾Mod启动器
         </h1>
         <div className="flex items-center gap-3 text-sm text-slate-400">
-          <span>TWModLauncher v1.1.0</span>
+          <span>TWModLauncher v1.2.0.0</span>
         </div>
       </header>
 
@@ -209,32 +239,36 @@ function App() {
       <main className="flex-1 overflow-hidden flex flex-col">
         {!gamePath ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
-            <div className="flex flex-col items-center gap-5">
-              <div className="text-center">
-                <p className="text-xl font-medium text-slate-200 mb-1">
-                  欢迎使用太吾Mod启动器
-                </p>
-                <p className="text-sm text-slate-400">
-                  请先选择《太吾绘卷》的游戏根目录
-                </p>
+            {!configLoaded ? (
+              <p className="text-sm text-slate-500">加载配置中...</p>
+            ) : (
+              <div className="flex flex-col items-center gap-5">
+                <div className="text-center">
+                  <p className="text-xl font-medium text-slate-200 mb-1">
+                    欢迎使用太吾Mod启动器
+                  </p>
+                  <p className="text-sm text-slate-400">
+                    请先选择《太吾绘卷》的游戏根目录
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleSelectFolder}
+                  disabled={detecting}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800
+                             text-white rounded-lg font-medium transition-colors cursor-pointer
+                             min-w-56 mt-2"
+                >
+                  {detecting ? "验证中..." : "选择游戏目录"}
+                </button>
+
+                {error && (
+                  <p className="text-sm text-red-400 max-w-md text-center mt-1">
+                    {error}
+                  </p>
+                )}
               </div>
-
-              <button
-                onClick={handleSelectFolder}
-                disabled={detecting}
-                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800
-                           text-white rounded-lg font-medium transition-colors cursor-pointer
-                           min-w-56 mt-2"
-              >
-                {detecting ? "验证中..." : "选择游戏目录"}
-              </button>
-
-              {error && (
-                <p className="text-sm text-red-400 max-w-md text-center mt-1">
-                  {error}
-                </p>
-              )}
-            </div>
+            )}
           </div>
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden">

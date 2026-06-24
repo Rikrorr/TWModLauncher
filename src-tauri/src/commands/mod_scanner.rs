@@ -13,6 +13,8 @@ pub struct ModScanEntry {
     pub cover_data: String,
     pub config_raw: String,
     pub settings_raw: String,
+    /// ISO 8601 timestamp of the mod directory's last modification
+    pub modified_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -82,6 +84,13 @@ fn scan_dir(dir: &PathBuf, source: u8) -> Vec<ModScanEntry> {
 
         let dir_path = path.to_string_lossy().to_string();
 
+        let modified_at = fs::metadata(&path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs().to_string())
+            .unwrap_or_default();
+
         entries.push(ModScanEntry {
             file_id,
             source,
@@ -90,6 +99,7 @@ fn scan_dir(dir: &PathBuf, source: u8) -> Vec<ModScanEntry> {
             cover_data,
             config_raw,
             settings_raw,
+            modified_at,
         });
     }
     entries

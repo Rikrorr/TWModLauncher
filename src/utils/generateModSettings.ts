@@ -22,7 +22,7 @@ export function collectModSettingsData(mods: ModInfo[]): ModSettingsData {
       .map((m) => `${m.source}_${m.fileId}`),
     modOrder: Object.fromEntries(
       valid
-        .filter((m) => m.order > 0)
+        .filter((m) => m.enabled)
         .map((m) => [`${m.source}_${m.fileId}`, m.order])
     ),
   };

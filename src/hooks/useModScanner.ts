@@ -11,6 +11,14 @@ import { useAppStore } from "../store/useAppStore";
 import type { ModInfo } from "../lib/types";
 import { resolveTagName } from "../utils/tagMapping";
 
+/** Format Unix timestamp (seconds) to readable date */
+function formatDate(secs: string): string {
+  const n = Number(secs);
+  if (!n) return "";
+  const d = new Date(n * 1000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 /** Simple string hash to generate unique numeric IDs from non-numeric directory names */
 function hashStr(s: string): number {
   let hash = 0;
@@ -23,7 +31,7 @@ function hashStr(s: string): number {
 
 /** Parse scan result into ModInfo list */
 function parseScanResult(
-  result: { entries: { file_id: string; source: number; dir_path: string; cover_path: string; cover_data: string; config_raw: string; settings_raw: string }[]; mod_settings_raw: string },
+  result: { entries: { file_id: string; source: number; dir_path: string; cover_path: string; cover_data: string; config_raw: string; settings_raw: string; modified_at: string }[]; mod_settings_raw: string },
   ms: ParsedModSettings,
 ): ModInfo[] {
   const mods: ModInfo[] = [];
@@ -63,6 +71,7 @@ function parseScanResult(
         needRestart: config.needRestart,
         parseError: config.parseError,
         isResidual,
+        updatedAt: formatDate(entry.modified_at),
       });
     } catch (e) {
       console.error(`[scanMods] Failed to parse entry ${entry.file_id}:`, e);
@@ -87,6 +96,7 @@ function parseScanResult(
         needRestart: false,
         parseError: true,
         isResidual: true,
+        updatedAt: formatDate(entry.modified_at),
       });
     }
   }

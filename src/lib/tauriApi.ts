@@ -90,3 +90,18 @@ export async function writeFile(
 export async function readFile(path: string): Promise<string> {
   return invoke<string>("read_file", { path });
 }
+
+/** Load persistent config JSON from app data dir */
+export async function loadConfig(): Promise<string> {
+  return invoke<string>("load_config");
+}
+
+/** Save persistent config JSON to app data dir */
+export async function saveConfig(data: string): Promise<void> {
+  return invoke("save_config", { data });
+}
+
+/** Open a folder in the system file explorer */
+export async function openInExplorer(path: string): Promise<void> {
+  return invoke("open_in_explorer", { path });
+}
