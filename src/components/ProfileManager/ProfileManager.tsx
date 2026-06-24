@@ -122,7 +122,7 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
       });
       console.log("[import] dialog result:", selected);
       if (!selected) return;
-      const path = typeof selected === "string" ? selected : selected.path;
+      const path = selected as string;
       console.log("[import] reading file:", path);
       const raw = await readFile(path);
       console.log("[import] raw length:", raw.length);
