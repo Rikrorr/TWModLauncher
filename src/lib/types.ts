@@ -63,6 +63,20 @@ export interface ModSettingDef {
   options?: Record<number, string>;
 }
 
+/** A virtual group of mods in the list */
+export interface ModGroup {
+  id: string;
+  name: string;
+  collapsed: boolean;
+  /** Ordered list of mod keys (source_fileId) in this group */
+  modKeys: string[];
+  /** Card-key anchor for positioning an empty group between cards.
+   *  Set at creation time from drag position; cleared when a mod is
+   *  added to the group. */
+  anchorBefore?: string;
+  anchorAfter?: string;
+}
+
 /** Profile metadata for saved mod configurations */
 export interface ProfileMeta {
   name: string;

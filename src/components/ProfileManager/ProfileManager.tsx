@@ -21,6 +21,7 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
   const [open, setOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [showSave, setShowSave] = useState(false);
+  const [confirmOverwriteName, setConfirmOverwriteName] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; type: "info" | "ok" | "error" } | null>(null);
 
   const refresh = async () => {
@@ -47,9 +48,19 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
     setTimeout(() => setMessage(null), 4000);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (forceOverwrite = false) => {
     const name = saveName.trim();
     if (!name) return;
+
+    // Check for existing profile with same name (unless force overwrite)
+    if (!forceOverwrite) {
+      const existing = profiles.find((p) => p.name === name);
+      if (existing) {
+        setConfirmOverwriteName(name);
+        return;
+      }
+    }
+
     const data: ProfileData = {
       name,
       createdAt: new Date().toISOString(),
@@ -68,9 +79,10 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
     };
     try {
       await saveProfile(name, JSON.stringify(data, null, 2));
-      flash(`方案 "${name}" 已新建`);
+      flash(forceOverwrite ? `方案 "${name}" 已覆盖` : `方案 "${name}" 已新建`);
       setSaveName("");
       setShowSave(false);
+      setConfirmOverwriteName(null);
       refresh();
     } catch (e) {
       flash(`保存失败: ${String(e)}`);
@@ -191,7 +203,7 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
                 </button>
               ) : (
                 <button
-                  onClick={() => { setShowSave(false); setSaveName(""); }}
+                  onClick={() => { setShowSave(false); setSaveName(""); setConfirmOverwriteName(null); }}
                   className="text-xs px-2 py-0.5 text-slate-400
                              hover:text-slate-200 cursor-pointer"
                 >
@@ -202,24 +214,50 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
           </div>
 
           {showSave && (
-            <div className="flex gap-1 mb-2">
-              <input
-                value={saveName}
-                onChange={(e) => setSaveName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSave()}
-                placeholder="方案名称..."
-                className="flex-1 text-xs px-2 py-1 bg-slate-700 border border-slate-600
-                           rounded text-slate-200 outline-none"
-                autoFocus
-              />
-              <button
-                onClick={handleSave}
-                disabled={!saveName.trim()}
-                className="text-xs px-2 py-0.5 bg-green-600 hover:bg-green-500
-                           disabled:bg-green-800 text-white rounded cursor-pointer"
-              >
-                新建
-              </button>
+            <div className="mb-2 space-y-1.5">
+              <div className="flex gap-1">
+                <input
+                  value={saveName}
+                  onChange={(e) => { setSaveName(e.target.value); setConfirmOverwriteName(null); }}
+                  onKeyDown={(e) => e.key === "Enter" && handleSave()}
+                  placeholder="方案名称..."
+                  className="flex-1 text-xs px-2 py-1 bg-slate-700 border border-slate-600
+                             rounded text-slate-200 outline-none"
+                  autoFocus
+                />
+                {!confirmOverwriteName && (
+                  <button
+                    onClick={() => handleSave()}
+                    disabled={!saveName.trim()}
+                    className="text-xs px-2 py-0.5 bg-green-600 hover:bg-green-500
+                               disabled:bg-green-800 text-white rounded cursor-pointer"
+                  >
+                    新建
+                  </button>
+                )}
+              </div>
+              {confirmOverwriteName && (
+                <div className="flex items-center gap-2 bg-amber-950/40 border border-amber-700/50
+                                rounded px-2 py-1.5">
+                  <span className="text-xs text-amber-300 flex-1">
+                    方案 "{confirmOverwriteName}" 已存在，是否覆盖？
+                  </span>
+                  <button
+                    onClick={() => handleSave(true)}
+                    className="text-xs px-2 py-0.5 bg-amber-600 hover:bg-amber-500
+                               text-white rounded cursor-pointer"
+                  >
+                    覆盖
+                  </button>
+                  <button
+                    onClick={() => setConfirmOverwriteName(null)}
+                    className="text-xs px-2 py-0.5 border border-slate-500
+                               text-slate-300 hover:text-slate-100 rounded cursor-pointer"
+                  >
+                    取消
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

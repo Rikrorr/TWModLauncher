@@ -3,7 +3,9 @@ import { open } from "@tauri-apps/plugin-dialog";
 import {
   validateGamePath,
   launchGame,
+  launchGameSteam,
   checkGameRunning,
+  killGame,
   writeModSettings,
   loadConfig,
   saveConfig,
@@ -38,9 +40,12 @@ function App() {
   const { scan, rescan } = useModScanner();
 
   const [gameRunning, setGameRunning] = useState(false);
+  const [hoverButton, setHoverButton] = useState(false);
+  const [hoverKill, setHoverKill] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-load cached game path on startup
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -117,6 +122,39 @@ function App() {
     } catch (e) {
       setLaunchError(`启动失败: ${String(e)}`);
     }
+  };
+
+  const handleLaunchSteam = async () => {
+    if (gameRunning) return;
+    setLaunchError(null);
+    try {
+      await launchGameSteam();
+      setGameRunning(true);
+      startPolling();
+    } catch (e) {
+      setLaunchError(`Steam 启动失败: ${String(e)}`);
+    }
+  };
+
+  const handleKill = async () => {
+    try {
+      await killGame();
+      setGameRunning(false);
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = null;
+    } catch (e) {
+      setLaunchError(`停止失败: ${String(e)}`);
+    }
+  };
+
+  const enterHover = () => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    setHoverButton(true);
+  };
+  const leaveHover = () => {
+    hoverTimerRef.current = setTimeout(() => {
+      setHoverButton(false);
+    }, 200);
   };
 
   const handleSelectFolder = async () => {
@@ -231,7 +269,7 @@ function App() {
           太吾Mod启动器
         </h1>
         <div className="flex items-center gap-3 text-sm text-slate-400">
-          <span>TWModLauncher v1.2.0.0</span>
+          <span>TWModLauncher v1.3.0.0</span>
         </div>
       </header>
 
@@ -301,7 +339,7 @@ function App() {
                 className="text-xs px-3 py-1 border border-slate-600 hover:border-slate-400
                            text-slate-400 rounded transition-colors cursor-pointer shrink-0"
               >
-                保存
+                同步
               </button>
               {lastMessage && (
                 <span className="text-xs text-slate-500 truncate">
@@ -313,17 +351,55 @@ function App() {
                 mods={mods}
                 onLoad={handleProfileLoad}
               />
-              <button
-                onClick={handleLaunch}
-                disabled={gameRunning}
-                className={`text-xs px-4 py-1 rounded font-medium transition-colors cursor-pointer shrink-0 ${
-                  gameRunning
-                    ? "bg-amber-600 text-white cursor-default"
-                    : "bg-green-600 hover:bg-green-500 text-white"
-                }`}
+              {/* Launch / Kill button */}
+              <div
+                className="relative shrink-0"
+                onMouseEnter={enterHover}
+                onMouseLeave={leaveHover}
               >
-                {gameRunning ? "游戏运行中" : "启动游戏"}
-              </button>
+                {!gameRunning ? (
+                  hoverButton ? (
+                    <div className="flex items-stretch">
+                      <button
+                        onClick={handleLaunch}
+                        className="text-xs px-3 py-1 rounded-l bg-green-600 hover:bg-green-500
+                                   text-white font-medium transition-colors cursor-pointer"
+                      >
+                        本地启动
+                      </button>
+                      <div className="w-px bg-green-700" />
+                      <button
+                        onClick={handleLaunchSteam}
+                        className="text-xs px-3 py-1 rounded-r bg-blue-600 hover:bg-blue-500
+                                   text-white font-medium transition-colors cursor-pointer"
+                      >
+                        Steam 启动
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleLaunch}
+                      className="text-xs px-4 py-1 rounded bg-green-600 hover:bg-green-500
+                                 text-white font-medium transition-colors cursor-pointer"
+                    >
+                      启动游戏
+                    </button>
+                  )
+                ) : (
+                  <button
+                    onClick={handleKill}
+                    onMouseEnter={() => setHoverKill(true)}
+                    onMouseLeave={() => setHoverKill(false)}
+                    className={`text-xs px-4 py-1 rounded font-medium transition-colors cursor-pointer ${
+                      hoverKill
+                        ? "bg-red-600 hover:bg-red-500 text-white"
+                        : "bg-amber-600 text-white"
+                    }`}
+                  >
+                    {hoverKill ? "停止游戏" : "游戏运行中"}
+                  </button>
+                )}
+              </div>
             </div>
 
             {launchError && (

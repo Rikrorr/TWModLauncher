@@ -55,6 +55,16 @@ export async function checkGameRunning(): Promise<boolean> {
   return invoke<boolean>("check_game_running");
 }
 
+/** Kill the game process */
+export async function killGame(): Promise<void> {
+  return invoke("kill_game");
+}
+
+/** Launch the game via Steam protocol */
+export async function launchGameSteam(): Promise<void> {
+  return invoke("launch_game_steam");
+}
+
 /** List saved profile names */
 export async function listProfiles(): Promise<ProfileMeta[]> {
   return invoke<ProfileMeta[]>("list_profiles");

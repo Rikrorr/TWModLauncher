@@ -54,6 +54,43 @@ pub fn check_game_running(state: tauri::State<GameProcess>) -> bool {
             }
         }
     } else {
-        false
+        // No handle stored (e.g. Steam launch) — check by process name
+        check_process_running()
+    }
+}
+
+/// Kill the game process (handle kill + taskkill fallback)
+#[tauri::command]
+pub fn kill_game(state: tauri::State<GameProcess>) -> Result<(), String> {
+    let mut guard = state.0.lock().map_err(|_| "内部状态错误".to_string())?;
+    if let Some(ref mut child) = *guard {
+        let _ = child.kill();
+        *guard = None;
+    }
+    // Fallback: kill by process name (handles launcher-detached / Steam-launched game)
+    let _ = Command::new("taskkill")
+        .args(["/F", "/IM", "The Scroll of Taiwu.exe"])
+        .output();
+    Ok(())
+}
+
+/// Launch the game via Steam protocol (steam://rungameid/838350)
+#[tauri::command]
+pub fn launch_game_steam() -> Result<(), String> {
+    Command::new("cmd")
+        .args(["/C", "start", "steam://rungameid/838350"])
+        .spawn()
+        .map_err(|e| format!("Steam 启动失败: {e}"))?;
+    Ok(())
+}
+
+/// Check if game exe is running by process name (no handle needed)
+fn check_process_running() -> bool {
+    let output = Command::new("tasklist")
+        .args(["/FI", "IMAGENAME eq The Scroll of Taiwu.exe", "/NH"])
+        .output();
+    match output {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).contains("The Scroll of Taiwu.exe"),
+        Err(_) => false,
     }
 }
