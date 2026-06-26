@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
 import {
   validateGamePath,
   launchGame,
@@ -44,7 +45,6 @@ function App() {
   const [hoverKill, setHoverKill] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-load cached game path on startup
@@ -86,30 +86,19 @@ function App() {
     }
   }, [gamePath, scan, setLastMessage]);
 
-  // Cleanup poll interval on unmount
+  // Listen for game-exited events from Rust backend (no polling needed)
   useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []);
+    // Check initial state in case game was already running
+    checkGameRunning().then((running) => {
+      if (running) setGameRunning(true);
+    });
 
-  const startPolling = useCallback(() => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      try {
-        const running = await checkGameRunning();
-        if (!running) {
-          setGameRunning(false);
-          if (pollRef.current) clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-      } catch {
-        // Assume game has exited if we can't check
-        setGameRunning(false);
-        if (pollRef.current) clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    }, 3000);
+    const p = listen("game-exited", () => {
+      setGameRunning(false);
+    });
+    return () => {
+      p.then((unlisten) => unlisten());
+    };
   }, []);
 
   const handleLaunch = async () => {
@@ -118,7 +107,6 @@ function App() {
     try {
       await launchGame(gamePath);
       setGameRunning(true);
-      startPolling();
     } catch (e) {
       setLaunchError(`启动失败: ${String(e)}`);
     }
@@ -130,7 +118,6 @@ function App() {
     try {
       await launchGameSteam();
       setGameRunning(true);
-      startPolling();
     } catch (e) {
       setLaunchError(`Steam 启动失败: ${String(e)}`);
     }
@@ -140,8 +127,6 @@ function App() {
     try {
       await killGame();
       setGameRunning(false);
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = null;
     } catch (e) {
       setLaunchError(`停止失败: ${String(e)}`);
     }
@@ -269,7 +254,7 @@ function App() {
           太吾Mod启动器
         </h1>
         <div className="flex items-center gap-3 text-sm text-slate-400">
-          <span>TWModLauncher v1.3.0.0</span>
+          <span>TWModLauncher v1.4.0.0</span>
         </div>
       </header>
 

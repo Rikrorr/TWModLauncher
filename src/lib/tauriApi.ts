@@ -115,3 +115,8 @@ export async function saveConfig(data: string): Promise<void> {
 export async function openInExplorer(path: string): Promise<void> {
   return invoke("open_in_explorer", { path });
 }
+
+/** Open a Steam Workshop item page in the Steam client */
+export async function openSteamWorkshop(fileId: number): Promise<void> {
+  return invoke("open_steam_workshop", { fileId: fileId.toString() });
+}

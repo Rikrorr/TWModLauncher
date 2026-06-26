@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ModInfo } from "../../lib/types";
 import { renderColoredText } from "../../utils/renderColoredText";
-import { openInExplorer } from "../../lib/tauriApi";
+import { openInExplorer, openSteamWorkshop } from "../../lib/tauriApi";
 
 interface Props {
   mod: ModInfo;
@@ -348,17 +348,31 @@ export default function ModCard({
           </button>
         </div>
 
-        {/* Open folder */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            openInExplorer(mod.dirPath).catch(() => {});
-          }}
-          title="打开 Mod 所在文件夹"
-          className="text-[10px] text-slate-600 hover:text-slate-400 cursor-pointer transition-colors"
-        >
-          打开目录
-        </button>
+        {/* Open folder + Workshop link */}
+        <div className="flex items-center gap-2">
+          {mod.source === 1 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                openSteamWorkshop(mod.fileId).catch(() => {});
+              }}
+              title="在 Steam 工坊中查看"
+              className="text-[10px] text-slate-600 hover:text-blue-400 cursor-pointer transition-colors"
+            >
+              访问工坊
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              openInExplorer(mod.dirPath).catch(() => {});
+            }}
+            title="打开 Mod 所在文件夹"
+            className="text-[10px] text-slate-600 hover:text-slate-400 cursor-pointer transition-colors"
+          >
+            打开目录
+          </button>
+        </div>
       </div>
     </div>
   );

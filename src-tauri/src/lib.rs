@@ -6,7 +6,10 @@ use std::sync::Mutex;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(commands::game_launcher::GameProcess(Mutex::new(None)))
+        .manage(commands::game_launcher::GameProcess {
+            child: Mutex::new(None),
+            pid: Mutex::new(None),
+        })
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -29,6 +32,7 @@ pub fn run() {
             commands::game_launcher::launch_game_steam,
             commands::game_launcher::check_game_running,
             commands::game_launcher::kill_game,
+            commands::game_launcher::open_steam_workshop,
             commands::profiles::list_profiles,
             commands::profiles::save_profile,
             commands::profiles::load_profile,
