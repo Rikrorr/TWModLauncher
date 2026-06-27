@@ -226,6 +226,20 @@ function App() {
     });
 
     setMods(updated);
+
+    // Restore groups if present
+    if (data.version >= 1 && data.groups) {
+      // Strip anchorBefore/anchorAfter from imported groups — card anchors
+      // are meaningless on a different client with different displayOrder.
+      const cleanedGroups = data.groups.map((g) => ({
+        ...g,
+        anchorBefore: undefined,
+        anchorAfter: undefined,
+      }));
+      useAppStore.getState().setGroups(cleanedGroups);
+      if (data.groupOrder) useAppStore.getState().setGroupOrder(data.groupOrder);
+    }
+
     setLastMessage(`方案 "${data.name}" 已加载（${data.enabledMods.length} 个已启用）`);
 
     // Write back to ModSettings.Lua
@@ -248,14 +262,104 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-slate-100">
-      {/* Title Bar */}
-      <header className="flex items-center justify-between px-6 py-3 border-b border-slate-700 bg-slate-800 shrink-0">
-        <h1 className="text-lg font-semibold tracking-wide">
-          太吾Mod启动器
-        </h1>
-        <div className="flex items-center gap-3 text-sm text-slate-400">
-          <span>TWModLauncher v1.4.0.0</span>
-        </div>
+      {/* Title Bar — merged with toolbar items */}
+      <header className="flex items-center gap-3 px-6 py-2.5 border-b border-slate-700 bg-slate-800 shrink-0">
+        {gamePath && (
+          <>
+            {/* Left group: path info */}
+            <span className="text-green-400 text-xs font-medium shrink-0">游戏目录已确认</span>
+            <span className="text-[11px] font-mono text-slate-400 truncate max-w-80 min-w-0">
+              {gamePath}
+            </span>
+            <button
+              onClick={handleReselect}
+              className="text-xs px-2.5 py-1 border border-slate-600 hover:border-slate-400
+                         text-slate-400 rounded transition-colors cursor-pointer shrink-0"
+            >
+              重新选择
+            </button>
+
+            {/* Spacer */}
+            <div className="flex-1 min-w-0" />
+
+            {/* Right group: actions + launch */}
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="text-xs px-2.5 py-1 border border-slate-600 hover:border-slate-400
+                         text-slate-400 rounded transition-colors cursor-pointer shrink-0
+                         disabled:opacity-50"
+            >
+              {refreshing ? "刷新中..." : "刷新"}
+            </button>
+            <ProfileManager
+              gamePath={gamePath}
+              mods={mods}
+              onLoad={handleProfileLoad}
+            />
+            <button
+              onClick={handleSaveAll}
+              className="text-xs px-2.5 py-1 border border-slate-600 hover:border-slate-400
+                         text-slate-400 rounded transition-colors cursor-pointer shrink-0"
+            >
+              同步
+            </button>
+            {lastMessage && (
+              <span className="text-xs text-slate-500 truncate max-w-48 shrink">
+                {lastMessage}
+              </span>
+            )}
+            {/* Launch / Kill button */}
+            <div
+              className="relative shrink-0"
+              onMouseEnter={enterHover}
+              onMouseLeave={leaveHover}
+            >
+              {!gameRunning ? (
+                hoverButton ? (
+                  <div className="flex items-stretch">
+                    <button
+                      onClick={handleLaunch}
+                      className="text-xs px-3 py-1 rounded-l bg-green-600 hover:bg-green-500
+                                 text-white font-medium transition-colors cursor-pointer"
+                    >
+                      本地启动
+                    </button>
+                    <div className="w-px bg-green-700" />
+                    <button
+                      onClick={handleLaunchSteam}
+                      className="text-xs px-3 py-1 rounded-r bg-blue-600 hover:bg-blue-500
+                                 text-white font-medium transition-colors cursor-pointer"
+                    >
+                      Steam 启动
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleLaunch}
+                    className="text-xs px-4 py-1 rounded bg-green-600 hover:bg-green-500
+                               text-white font-medium transition-colors cursor-pointer"
+                  >
+                    启动游戏
+                  </button>
+                )
+              ) : (
+                <button
+                  onClick={handleKill}
+                  onMouseEnter={() => setHoverKill(true)}
+                  onMouseLeave={() => setHoverKill(false)}
+                  className={`text-xs px-4 py-1 rounded font-medium transition-colors cursor-pointer ${
+                    hoverKill
+                      ? "bg-red-600 hover:bg-red-500 text-white"
+                      : "bg-amber-600 text-white"
+                  }`}
+                >
+                  {hoverKill ? "停止游戏" : "游戏运行中"}
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </header>
 
       {/* Main Content */}
@@ -294,108 +398,16 @@ function App() {
             )}
           </div>
         ) : (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Game info bar */}
-            <div className="flex items-center gap-3 px-6 py-2.5 border-b border-slate-700 bg-slate-800/50 shrink-0">
-              <span className="text-green-400 text-sm font-medium">
-                游戏目录已确认
-              </span>
-              <span className="text-xs font-mono text-slate-400 truncate flex-1">
-                {gamePath}
-              </span>
-              <button
-                onClick={handleReselect}
-                className="text-xs px-3 py-1 border border-slate-600 hover:border-slate-400
-                           text-slate-400 rounded transition-colors cursor-pointer shrink-0"
-              >
-                重新选择
-              </button>
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
-                className="text-xs px-3 py-1 border border-slate-600 hover:border-slate-400
-                           text-slate-400 rounded transition-colors cursor-pointer shrink-0
-                           disabled:opacity-50"
-              >
-                {refreshing ? "刷新中..." : "刷新"}
-              </button>
-              <button
-                onClick={handleSaveAll}
-                className="text-xs px-3 py-1 border border-slate-600 hover:border-slate-400
-                           text-slate-400 rounded transition-colors cursor-pointer shrink-0"
-              >
-                同步
-              </button>
-              {lastMessage && (
-                <span className="text-xs text-slate-500 truncate">
-                  {lastMessage}
-                </span>
-              )}
-              <ProfileManager
-                gamePath={gamePath}
-                mods={mods}
-                onLoad={handleProfileLoad}
-              />
-              {/* Launch / Kill button */}
-              <div
-                className="relative shrink-0"
-                onMouseEnter={enterHover}
-                onMouseLeave={leaveHover}
-              >
-                {!gameRunning ? (
-                  hoverButton ? (
-                    <div className="flex items-stretch">
-                      <button
-                        onClick={handleLaunch}
-                        className="text-xs px-3 py-1 rounded-l bg-green-600 hover:bg-green-500
-                                   text-white font-medium transition-colors cursor-pointer"
-                      >
-                        本地启动
-                      </button>
-                      <div className="w-px bg-green-700" />
-                      <button
-                        onClick={handleLaunchSteam}
-                        className="text-xs px-3 py-1 rounded-r bg-blue-600 hover:bg-blue-500
-                                   text-white font-medium transition-colors cursor-pointer"
-                      >
-                        Steam 启动
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={handleLaunch}
-                      className="text-xs px-4 py-1 rounded bg-green-600 hover:bg-green-500
-                                 text-white font-medium transition-colors cursor-pointer"
-                    >
-                      启动游戏
-                    </button>
-                  )
-                ) : (
-                  <button
-                    onClick={handleKill}
-                    onMouseEnter={() => setHoverKill(true)}
-                    onMouseLeave={() => setHoverKill(false)}
-                    className={`text-xs px-4 py-1 rounded font-medium transition-colors cursor-pointer ${
-                      hoverKill
-                        ? "bg-red-600 hover:bg-red-500 text-white"
-                        : "bg-amber-600 text-white"
-                    }`}
-                  >
-                    {hoverKill ? "停止游戏" : "游戏运行中"}
-                  </button>
-                )}
-              </div>
-            </div>
-
+          <>
             {launchError && (
-              <div className="px-6 py-2 bg-red-900/40 border-b border-red-800 text-xs text-red-300">
+              <div className="px-6 py-2 bg-red-900/40 border-b border-red-800 text-xs text-red-300 shrink-0">
                 {launchError}
               </div>
             )}
 
             {/* Mod list — kept mounted to preserve scroll position */}
             <div
-              className={`flex-1 overflow-y-auto px-6 py-4 ${
+              className={`flex-1 flex flex-col overflow-hidden ${
                 selectedMod ? "hidden" : ""
               }`}
             >
@@ -417,7 +429,7 @@ function App() {
                 />
               </div>
             )}
-          </div>
+          </>
         )}
       </main>
 

@@ -8,12 +8,35 @@ import {
   writeFile,
   readFile,
 } from "../../lib/tauriApi";
-import type { ModInfo, ProfileData, ProfileMeta } from "../../lib/types";
+import { useAppStore } from "../../store/useAppStore";
+import type { ModInfo, ModMeta, ProfileData, ProfileMeta } from "../../lib/types";
+import MissingModsDialog from "./MissingModsDialog";
 
 interface Props {
   gamePath: string;
   mods: ModInfo[];
   onLoad: (data: ProfileData) => void;
+}
+
+/** Compare a profile's referenced mod keys against the currently installed mods.
+ *  Returns a Map of missing mod keys -> ModMeta (only for mods that have metadata). */
+function detectMissingMods(data: ProfileData, mods: ModInfo[]): Map<string, ModMeta> {
+  const installedKeys = new Set(
+    mods.map((m) => `${m.source}_${m.fileId}`)
+  );
+  const referencedKeys = new Set<string>();
+  data.enabledMods.forEach((k) => referencedKeys.add(k));
+  Object.keys(data.modOrder ?? {}).forEach((k) => referencedKeys.add(k));
+  Object.keys(data.modSettings ?? {}).forEach((k) => referencedKeys.add(k));
+  (data.groups ?? []).forEach((g) => g.modKeys.forEach((k) => referencedKeys.add(k)));
+
+  const missing = new Map<string, ModMeta>();
+  for (const key of referencedKeys) {
+    if (!installedKeys.has(key) && data.modMeta?.[key]) {
+      missing.set(key, data.modMeta[key]);
+    }
+  }
+  return missing;
 }
 
 export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
@@ -23,11 +46,12 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
   const [showSave, setShowSave] = useState(false);
   const [confirmOverwriteName, setConfirmOverwriteName] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; type: "info" | "ok" | "error" } | null>(null);
+  const [missingMods, setMissingMods] = useState<Map<string, ModMeta> | null>(null);
+  const [pendingLoad, setPendingLoad] = useState<ProfileData | null>(null);
 
   const refresh = async () => {
     try {
       const list = await listProfiles();
-      console.log("[profile] refresh got", list.length, "profiles:", list.map(p => p.name));
       setProfiles(list);
     } catch (e) {
       console.error("[profile] refresh error:", e);
@@ -52,7 +76,6 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
     const name = saveName.trim();
     if (!name) return;
 
-    // Check for existing profile with same name (unless force overwrite)
     if (!forceOverwrite) {
       const existing = profiles.find((p) => p.name === name);
       if (existing) {
@@ -61,7 +84,9 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
       }
     }
 
+    const appStore = useAppStore.getState();
     const data: ProfileData = {
+      version: 1,
       name,
       createdAt: new Date().toISOString(),
       gamePath,
@@ -75,6 +100,21 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
         mods
           .filter((m) => Object.keys(m.currentSettings).length > 0)
           .map((m) => [`${m.source}_${m.fileId}`, m.currentSettings])
+      ),
+      groups: appStore.groups,
+      groupOrder: appStore.groupOrder,
+      modMeta: Object.fromEntries(
+        mods.map((m) => {
+          const key = `${m.source}_${m.fileId}`;
+          const meta: ModMeta = {
+            title: m.title,
+            author: m.author,
+            source: m.source,
+            fileId: m.fileId,
+          };
+          if (m.version) meta.version = m.version;
+          return [key, meta];
+        })
       ),
     };
     try {
@@ -93,6 +133,15 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
     try {
       const raw = await loadProfile(name);
       const data = JSON.parse(raw) as ProfileData;
+
+      const missing = detectMissingMods(data, mods);
+      if (missing.size > 0) {
+        setOpen(false);
+        setPendingLoad(data);
+        setMissingMods(missing);
+        return;
+      }
+
       onLoad(data);
       flash(`方案 "${name}" 已加载`);
       setOpen(false);
@@ -118,7 +167,7 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
         defaultPath: `${name}.json`,
         filters: [{ name: "JSON", extensions: ["json"] }],
       });
-      if (!path) return; // user cancelled
+      if (!path) return;
       await writeFile(path, raw);
       flash(`方案 "${name}" 已导出`);
     } catch (e) {
@@ -132,26 +181,28 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
         multiple: false,
         filters: [{ name: "JSON", extensions: ["json"] }],
       });
-      console.log("[import] dialog result:", selected);
       if (!selected) return;
       const path = selected as string;
-      console.log("[import] reading file:", path);
       const raw = await readFile(path);
-      console.log("[import] raw length:", raw.length);
       const data = JSON.parse(raw) as ProfileData;
-      console.log("[import] parsed name:", data.name, "mods:", data.enabledMods?.length);
       if (!data.name || !Array.isArray(data.enabledMods)) {
         flash("导入失败: 无效的方案文件");
         return;
       }
+
+      // Save to local store first
       await saveProfile(data.name, JSON.stringify(data, null, 2));
-      console.log("[import] profile saved, refreshing...");
-      flashOk(`方案 "${data.name}" 已导入`);
       refresh();
+
+      const missing = detectMissingMods(data, mods);
+      if (missing.size > 0) {
+        setOpen(false);
+        setMissingMods(missing);
+      } else {
+        flashOk(`方案 "${data.name}" 已导入`);
+      }
     } catch (e) {
-      console.error("[import] error:", e);
-      setMessage({ text: `导入失败: ${String(e)}`, type: "error" });
-      setTimeout(() => setMessage(null), 6000);
+      flash(`导入失败: ${String(e)}`);
     }
   };
 
@@ -176,6 +227,23 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
         }`}>
           {message.text}
         </div>
+      )}
+
+      {missingMods && (
+        <MissingModsDialog
+          missing={missingMods}
+          onClose={() => {
+            const count = missingMods.size;
+            setMissingMods(null);
+            if (pendingLoad) {
+              onLoad(pendingLoad);
+              setPendingLoad(null);
+              flashOk(`方案 "${pendingLoad.name}" 已加载（${count} 个 Mod 缺失）`);
+            } else {
+              flashOk(`方案已导入（${count} 个 Mod 缺失）`);
+            }
+          }}
+        />
       )}
 
       {open && (

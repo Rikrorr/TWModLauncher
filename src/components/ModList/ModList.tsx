@@ -12,8 +12,6 @@ interface Props {
   onSelectMod: (key: string) => void;
 }
 
-type SortKey = "name" | "enabled" | "custom";
-
 // Filter categories based on source + residual status
 const FILTER_CATEGORIES = [
   { key: "ws-normal", label: "创意工坊 正常", source: 1, residual: false },
@@ -24,18 +22,12 @@ const FILTER_CATEGORIES = [
 
 type CategoryKey = (typeof FILTER_CATEGORIES)[number]["key"];
 
-const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: "custom", label: "自定义排序" },
-  { value: "name", label: "名称" },
-  { value: "enabled", label: "启用优先" },
-];
-
 const PREFS_KEY = "twm-filter-prefs";
 
 type ViewMode = "detailed" | "compact";
 
 interface FilterPrefs {
-  sortKey: SortKey;
+  sortKey: "custom";
   activeCategories: CategoryKey[];
   tagMode: "or" | "and";
   viewMode: ViewMode;
@@ -70,14 +62,14 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
   const setModOrder = useModStore((s) => s.setModOrder);
   const setLastMessage = useAppStore((s) => s.setLastMessage);
   const templateRaw = useAppStore((s) => s.templateRaw);
+  const groups = useAppStore((s) => s.groups);
+  const setGroups = useAppStore((s) => s.setGroups);
+  const groupOrder = useAppStore((s) => s.groupOrder);
+  const setGroupOrder = useAppStore((s) => s.setGroupOrder);
   const [saving, setSaving] = useState(false);
 
   const [search, setSearch] = useState("");
   const [enabledFilter, setEnabledFilter] = useState<"all" | "enabled" | "disabled">("all");
-  const [sortKey, setSortKey] = useState<SortKey>(() => {
-    const cached = loadPrefs();
-    return cached?.sortKey ?? "custom";
-  });
   // Multi-select categories — only normal (non-residual) checked by default
   const [activeCategories, setActiveCategories] = useState<Set<CategoryKey>>(() => {
     const cached = loadPrefs();
@@ -102,19 +94,6 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
   const [displayOrder, setDisplayOrder] = useState<string[]>(() => {
     const cached = loadPrefs();
     return cached?.displayOrder ?? [];
-  });
-  // Virtual mod folders
-  const [groups, setGroups] = useState<ModGroup[]>(() => {
-    const cached = loadPrefs();
-    return cached?.groups ?? [];
-  });
-  // Visual order of group IDs (controls where group headers appear)
-  const [groupOrder, setGroupOrder] = useState<string[]>(() => {
-    const cached = loadPrefs();
-    if (cached?.groupOrder) return cached.groupOrder;
-    // Fallback: use group creation order
-    const cachedGroups = cached?.groups ?? [];
-    return cachedGroups.map((g) => g.id);
   });
   const listRef = useRef<HTMLDivElement>(null);
   const [dragState, setDragState] = useState<{
@@ -193,16 +172,17 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
 
   // Sync groupOrder with groups (remove deleted, add new at end)
   useEffect(() => {
-    setGroupOrder((prev) => {
-      const groupIdSet = new Set(groups.map((g) => g.id));
-      const filtered = prev.filter((id) => groupIdSet.has(id));
-      for (const g of groups) {
-        if (!filtered.includes(g.id)) filtered.push(g.id);
+    const groupIdSet = new Set(groups.map((g) => g.id));
+    const filtered = groupOrder.filter((id) => groupIdSet.has(id));
+    let changed = filtered.length !== groupOrder.length;
+    for (const g of groups) {
+      if (!filtered.includes(g.id)) {
+        filtered.push(g.id);
+        changed = true;
       }
-      if (filtered.length === prev.length && filtered.every((id, i) => id === prev[i])) return prev;
-      return filtered;
-    });
-  }, [groups]);
+    }
+    if (changed) setGroupOrder(filtered);
+  }, [groups, groupOrder, setGroupOrder]);
 
   // All unique tags across all mods, sorted
   const allTags = useMemo(() => {
@@ -230,7 +210,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
   // Persist filter preferences to localStorage
   useEffect(() => {
     savePrefs({
-      sortKey,
+      sortKey: "custom" as const,
       activeCategories: [...activeCategories],
       tagMode,
       viewMode,
@@ -238,7 +218,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
       displayOrder,
       groupOrder,
     });
-  }, [sortKey, activeCategories, tagMode, viewMode, groups, displayOrder, groupOrder]);
+  }, [activeCategories, tagMode, viewMode, groups, displayOrder, groupOrder]);
 
   // Three-state toggle: all → enabled → disabled → all
   const cycleEnabledFilter = () => {
@@ -294,29 +274,17 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
       result = result.filter((m) => !m.enabled);
     }
 
-    // Sort
+    // Sort by user-defined displayOrder, then by name for unlisted
     result.sort((a, b) => {
-      switch (sortKey) {
-        case "name":
-          return a.title.localeCompare(b.title, "zh");
-        case "enabled":
-          return (b.enabled ? 1 : 0) - (a.enabled ? 1 : 0) ||
-            a.title.localeCompare(b.title, "zh");
-        case "custom": {
-          // Sort by user-defined displayOrder, then by name for unlisted
-          const idxA = displayOrder.indexOf(`${a.source}_${a.fileId}`);
-          const idxB = displayOrder.indexOf(`${b.source}_${b.fileId}`);
-          const rankA = idxA === -1 ? Infinity : idxA;
-          const rankB = idxB === -1 ? Infinity : idxB;
-          return rankA - rankB || a.title.localeCompare(b.title, "zh");
-        }
-        default:
-          return 0;
-      }
+      const idxA = displayOrder.indexOf(`${a.source}_${a.fileId}`);
+      const idxB = displayOrder.indexOf(`${b.source}_${b.fileId}`);
+      const rankA = idxA === -1 ? Infinity : idxA;
+      const rankB = idxB === -1 ? Infinity : idxB;
+      return rankA - rankB || a.title.localeCompare(b.title, "zh");
     });
 
     return result;
-  }, [mods, search, enabledFilter, sortKey, fuse, activeCategories, activeTags, tagMode, displayOrder]);
+  }, [mods, search, enabledFilter, fuse, activeCategories, activeTags, tagMode, displayOrder]);
 
   const saveModSettings = useCallback(
     async () => {
@@ -344,6 +312,34 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
     },
     [setModOrder, saveModSettings],
   );
+
+  const handleApplyOrder = useCallback(() => {
+    const currentMods = useModStore.getState().mods;
+    const keyModMap = new Map(currentMods.map((m) => [`${m.source}_${m.fileId}`, m]));
+    const updates: [string, number][] = [];
+
+    let nextOrder = 0;
+    // Process displayOrder first
+    for (const key of displayOrder) {
+      const mod = keyModMap.get(key);
+      if (mod?.enabled) {
+        updates.push([key, nextOrder++]);
+        keyModMap.delete(key);
+      }
+    }
+    // Remaining enabled mods not in displayOrder
+    for (const [key, mod] of keyModMap) {
+      if (mod.enabled) {
+        updates.push([key, nextOrder++]);
+      }
+    }
+
+    for (const [key, order] of updates) {
+      setModOrder(key, order);
+    }
+    saveModSettings();
+    setLastMessage(`已应用加载顺序 — ${updates.length} 个已启用 Mod 从 0 递增`);
+  }, [displayOrder, setModOrder, saveModSettings, setLastMessage]);
 
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
 
@@ -403,11 +399,6 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
 
   const handleDragMouseDown = useCallback(
     (e: React.MouseEvent, key: string) => {
-      console.log("[drag] handleDragMouseDown ENTER key=", key, "sortKey=", sortKey, "inDisplayOrder=", displayOrder.indexOf(key));
-      if (sortKey !== "custom") {
-        console.log("[drag] mousedown skipped: sortKey=", sortKey);
-        return;
-      }
       const idx = displayOrder.indexOf(key);
       if (idx === -1) {
         console.log("[drag] mousedown skipped: key not in displayOrder", key);
@@ -466,16 +457,14 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
         started: false,
       });
     },
-    [sortKey, displayOrder],
+    [displayOrder],
   );
 
   // Group header drag — same pattern as card drag
   const handleGroupHeaderDragMouseDown = useCallback(
     (e: React.MouseEvent, groupId: string) => {
-      if (sortKey !== "custom") return;
       const idx = groupOrder.indexOf(groupId);
       if (idx === -1) return;
-      console.log("[group-drag] mousedown start groupId=", groupId, "idx=", idx, "groupOrder.length=", groupOrder.length);
       e.preventDefault();
       preventClickRef.current = true;
 
@@ -532,7 +521,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
         started: false,
       });
     },
-    [sortKey, groupOrder],
+    [groupOrder],
   );
 
   // Attach global mousemove/mouseup via useEffect to avoid missing events
@@ -1151,239 +1140,234 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
   }
 
   return (
-    <div
-      ref={listRef}
-      className="flex flex-col gap-3"
-    >
-      {/* Search / Filter / Sort bar */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-48">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索 Mod 名称、作者、描述..."
-            className="w-full text-xs px-3 py-1.5 pl-7 bg-slate-800 border border-slate-600
-                       rounded text-slate-200 outline-none focus:border-blue-500 transition-colors"
-          />
-          <svg
-            className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+    <>
+      {/* Filter bar — fixed at top */}
+      <div className="shrink-0 px-6 py-2.5 border-b border-slate-700 bg-slate-800/50">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-48">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索 Mod 名称、作者、描述..."
+              className="w-full text-xs px-3 py-1.5 pl-7 bg-slate-800 border border-slate-600
+                         rounded text-slate-200 outline-none focus:border-blue-500 transition-colors"
             />
-          </svg>
-        </div>
+            <svg
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+          </div>
 
-        <button
-          onClick={cycleEnabledFilter}
-          title="快速筛选：全部 / 已启用 / 已禁用"
-          className={`text-xs px-2 py-1.5 rounded border cursor-pointer shrink-0 transition-colors ${
-            enabledFilter === "all"
-              ? "border-slate-500 text-slate-300 bg-slate-700"
-              : enabledFilter === "enabled"
-                ? "border-green-600 text-green-300 bg-green-900/40"
-                : "border-amber-600 text-amber-300 bg-amber-900/40"
-          }`}
-        >
-          {enabledFilter === "all" ? "全部" : enabledFilter === "enabled" ? "已启用" : "已禁用"}
-        </button>
-
-        {/* Category multi-select dropdown */}
-        <div className="relative shrink-0" ref={catDropdownRef}>
           <button
-            onClick={() => setCatDropdownOpen((v) => !v)}
+            onClick={cycleEnabledFilter}
+            title="快速筛选：全部 / 已启用 / 已禁用"
+            className={`text-xs px-2 py-1.5 rounded border cursor-pointer shrink-0 transition-colors ${
+              enabledFilter === "all"
+                ? "border-slate-500 text-slate-300 bg-slate-700"
+                : enabledFilter === "enabled"
+                  ? "border-green-600 text-green-300 bg-green-900/40"
+                  : "border-amber-600 text-amber-300 bg-amber-900/40"
+            }`}
+          >
+            {enabledFilter === "all" ? "全部" : enabledFilter === "enabled" ? "已启用" : "已禁用"}
+          </button>
+
+          {/* Category multi-select dropdown */}
+          <div className="relative shrink-0" ref={catDropdownRef}>
+            <button
+              onClick={() => setCatDropdownOpen((v) => !v)}
+              className="text-xs px-2 py-1.5 border border-slate-600 rounded
+                         text-slate-300 bg-slate-800 hover:border-slate-400
+                         cursor-pointer transition-colors flex items-center gap-1"
+            >
+              分类
+              <svg className="w-3 h-3 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {catDropdownOpen && (
+              <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-30 bg-slate-800 border border-slate-600
+                              rounded shadow-lg py-1 min-w-36">
+                {FILTER_CATEGORIES.map((cat) => {
+                  const checked = activeCategories.has(cat.key);
+                  return (
+                    <label
+                      key={cat.key}
+                      className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300
+                                 hover:bg-slate-700 cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setActiveCategories((prev) => {
+                            const next = new Set(prev);
+                            if (checked) next.delete(cat.key);
+                            else next.add(cat.key);
+                            return next;
+                          });
+                        }}
+                        className="accent-blue-500"
+                      />
+                      {cat.label}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Tag multi-select dropdown */}
+          <div className="relative shrink-0" ref={tagDropdownRef}>
+            <button
+              onClick={() => setTagDropdownOpen((v) => !v)}
+              className={`text-xs px-2 py-1.5 border rounded
+                         text-slate-300 hover:border-slate-400
+                         cursor-pointer transition-colors flex items-center gap-1 ${
+                           activeTags.size > 0
+                             ? "border-blue-500 bg-blue-900/30"
+                             : "border-slate-600 bg-slate-800"
+                         }`}
+            >
+              标签
+              {activeTags.size > 0 && (
+                <span className="text-[10px] text-blue-300 ml-0.5">
+                  ({activeTags.size})
+                </span>
+              )}
+              <svg className="w-3 h-3 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {tagDropdownOpen && (
+              <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-30 bg-slate-800 border border-slate-600
+                              rounded shadow-lg py-1 max-h-60 overflow-y-auto min-w-44">
+                {allTags.length === 0 && (
+                  <p className="px-3 py-2 text-xs text-slate-500">暂无标签</p>
+                )}
+                {allTags.length > 0 && activeTags.size > 0 && (
+                  <div className="flex items-center gap-1 px-3 py-1 border-b border-slate-600 mb-1">
+                    <span className="text-xs text-slate-500">匹配:</span>
+                    <button
+                      onClick={() => setTagMode("or")}
+                      className={"text-xs px-1.5 py-0.5 rounded cursor-pointer transition-colors " + (tagMode === "or" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-slate-200")}
+                    >
+                      或(OR)
+                    </button>
+                    <button
+                      onClick={() => setTagMode("and")}
+                      className={"text-xs px-1.5 py-0.5 rounded cursor-pointer transition-colors " + (tagMode === "and" ? "bg-amber-600 text-white" : "text-slate-400 hover:text-slate-200")}
+                    >
+                      与(AND)
+                    </button>
+                  </div>
+                )}
+                {allTags.map((tag) => {
+                  const checked = activeTags.has(tag);
+                  return (
+                    <label
+                      key={tag}
+                      className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300
+                                 hover:bg-slate-700 cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setActiveTags((prev) => {
+                            const next = new Set(prev);
+                            if (checked) next.delete(tag);
+                            else next.add(tag);
+                            return next;
+                          });
+                        }}
+                        className="accent-blue-500"
+                      />
+                      {tag}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Apply display order to mod load order */}
+          <button
+            onClick={handleApplyOrder}
+            title="将当前列表中已启用Mod的顺序同步为加载顺序（从0递增）"
+            className="text-xs px-2 py-1.5 border border-amber-600 rounded
+                       text-amber-300 bg-amber-950/30 hover:bg-amber-900/40
+                       cursor-pointer transition-colors shrink-0"
+          >
+            应用顺序
+          </button>
+
+          {/* View mode toggle */}
+          <button
+            onClick={() => setViewMode((v) => (v === "detailed" ? "compact" : "detailed"))}
+            title={viewMode === "detailed" ? "切换到紧凑视图" : "切换到详细视图"}
             className="text-xs px-2 py-1.5 border border-slate-600 rounded
                        text-slate-300 bg-slate-800 hover:border-slate-400
-                       cursor-pointer transition-colors flex items-center gap-1"
+                       cursor-pointer transition-colors shrink-0"
           >
-            分类
-            <svg className="w-3 h-3 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
+            {viewMode === "detailed" ? "紧凑" : "详细"}
           </button>
-          {catDropdownOpen && (
-            <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-30 bg-slate-800 border border-slate-600
-                            rounded shadow-lg py-1 min-w-36">
-              {FILTER_CATEGORIES.map((cat) => {
-                const checked = activeCategories.has(cat.key);
-                return (
-                  <label
-                    key={cat.key}
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300
-                               hover:bg-slate-700 cursor-pointer transition-colors"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => {
-                        setActiveCategories((prev) => {
-                          const next = new Set(prev);
-                          if (checked) next.delete(cat.key);
-                          else next.add(cat.key);
-                          return next;
-                        });
-                      }}
-                      className="accent-blue-500"
-                    />
-                    {cat.label}
-                  </label>
-                );
-              })}
-            </div>
-          )}
-        </div>
 
-        {/* Tag multi-select dropdown */}
-        <div className="relative shrink-0" ref={tagDropdownRef}>
+          {/* New group — drag from button to position */}
           <button
-            onClick={() => setTagDropdownOpen((v) => !v)}
-            className={`text-xs px-2 py-1.5 border rounded
-                       text-slate-300 hover:border-slate-400
-                       cursor-pointer transition-colors flex items-center gap-1 ${
-                         activeTags.size > 0
-                           ? "border-blue-500 bg-blue-900/30"
-                           : "border-slate-600 bg-slate-800"
-                       }`}
-          >
-            标签
-            {activeTags.size > 0 && (
-              <span className="text-[10px] text-blue-300 ml-0.5">
-                ({activeTags.size})
-              </span>
-            )}
-            <svg className="w-3 h-3 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          {tagDropdownOpen && (
-            <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-30 bg-slate-800 border border-slate-600
-                            rounded shadow-lg py-1 max-h-60 overflow-y-auto min-w-44">
-              {allTags.length === 0 && (
-                <p className="px-3 py-2 text-xs text-slate-500">暂无标签</p>
-              )}
-              {allTags.length > 0 && activeTags.size > 0 && (
-                <div className="flex items-center gap-1 px-3 py-1 border-b border-slate-600 mb-1">
-                  <span className="text-xs text-slate-500">匹配:</span>
-                  <button
-                    onClick={() => setTagMode("or")}
-                    className={"text-xs px-1.5 py-0.5 rounded cursor-pointer transition-colors " + (tagMode === "or" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-slate-200")}
-                  >
-                    或(OR)
-                  </button>
-                  <button
-                    onClick={() => setTagMode("and")}
-                    className={"text-xs px-1.5 py-0.5 rounded cursor-pointer transition-colors " + (tagMode === "and" ? "bg-amber-600 text-white" : "text-slate-400 hover:text-slate-200")}
-                  >
-                    与(AND)
-                  </button>
-                </div>
-              )}
-              {allTags.map((tag) => {
-                const checked = activeTags.has(tag);
-                return (
-                  <label
-                    key={tag}
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300
-                               hover:bg-slate-700 cursor-pointer transition-colors"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => {
-                        setActiveTags((prev) => {
-                          const next = new Set(prev);
-                          if (checked) next.delete(tag);
-                          else next.add(tag);
-                          return next;
-                        });
-                      }}
-                      className="accent-blue-500"
-                    />
-                    {tag}
-                  </label>
-                );
-              })}
-            </div>
-          )}
-        </div>
+            onMouseDown={(e) => {
+              e.preventDefault();
+              // Snapshot card positions and scroll state for correct placeholder tracking
+              if (listRef.current) {
+                // The scrollable cards container is the immediate parent of listRef
+                const el: HTMLElement | null = listRef.current.parentElement;
+                scrollContainerRef.current = el;
+                scrollSnapshotRef.current = el ? el.scrollTop : 0;
 
-        <select
-          value={sortKey}
-          onChange={(e) => setSortKey(e.target.value as SortKey)}
-          className="text-xs px-2 py-1.5 bg-slate-800 border border-slate-600
-                     rounded text-slate-300 outline-none cursor-pointer"
-        >
-          {SORT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+                const positions = cardPositionsRef.current;
+                positions.clear();
+                const children = listRef.current.querySelectorAll("[data-mod-key]");
+                children.forEach((child) => {
+                  const k = child.getAttribute("data-mod-key")!;
+                  const rect = child.getBoundingClientRect();
+                  positions.set(k, { top: rect.top, midY: rect.top + rect.height / 2, height: rect.height });
+                });
 
-        {/* View mode toggle */}
-        <button
-          onClick={() => setViewMode((v) => (v === "detailed" ? "compact" : "detailed"))}
-          title={viewMode === "detailed" ? "切换到紧凑视图" : "切换到详细视图"}
-          className="text-xs px-2 py-1.5 border border-slate-600 rounded
-                     text-slate-300 bg-slate-800 hover:border-slate-400
-                     cursor-pointer transition-colors shrink-0"
-        >
-          {viewMode === "detailed" ? "紧凑" : "详细"}
-        </button>
-
-        {/* New group — drag from button to position */}
-        <button
-          onMouseDown={(e) => {
-            e.preventDefault();
-            // Snapshot card positions and scroll state for correct placeholder tracking
-            if (listRef.current) {
-              // Find scroll container
-              let el: HTMLElement | null = listRef.current.parentElement;
-              while (el) {
-                const style = window.getComputedStyle(el);
-                if (style.overflowY === "auto" || style.overflowY === "scroll") break;
-                el = el.parentElement;
+                // Snapshot group header positions too (use during drag, not live DOM)
+                const gHeaders = groupHeaderPositionsRef.current;
+                gHeaders.clear();
+                const headers = listRef.current.querySelectorAll("[data-folder-id]");
+                headers.forEach((header) => {
+                  const gid = header.getAttribute("data-folder-id")!;
+                  const rect = header.getBoundingClientRect();
+                  gHeaders.set(gid, { top: rect.top, bottom: rect.bottom });
+                });
               }
-              scrollContainerRef.current = el;
-              scrollSnapshotRef.current = el ? el.scrollTop : 0;
-
-              const positions = cardPositionsRef.current;
-              positions.clear();
-              const children = listRef.current.querySelectorAll("[data-mod-key]");
-              children.forEach((child) => {
-                const k = child.getAttribute("data-mod-key")!;
-                const rect = child.getBoundingClientRect();
-                positions.set(k, { top: rect.top, midY: rect.top + rect.height / 2, height: rect.height });
-              });
-
-              // Snapshot group header positions too (use during drag, not live DOM)
-              const gHeaders = groupHeaderPositionsRef.current;
-              gHeaders.clear();
-              const headers = listRef.current.querySelectorAll("[data-folder-id]");
-              headers.forEach((header) => {
-                const gid = header.getAttribute("data-folder-id")!;
-                const rect = header.getBoundingClientRect();
-                gHeaders.set(gid, { top: rect.top, bottom: rect.bottom });
-              });
-            }
-            setGroupCreateState({ active: false, startY: e.clientY, slotY: e.clientY, insertAfter: null, insertBefore: null, groupOrderIdx: groupOrderRef.current.length });
-          }}
-          className="text-xs px-2 py-1.5 border border-blue-700 rounded
-                     text-blue-300 bg-blue-950/30 hover:bg-blue-900/40
-                     cursor-pointer transition-colors shrink-0 select-none"
-          title="按住拖拽到列表中创建分组"
-        >
-          + 分组
-        </button>
+              setGroupCreateState({ active: false, startY: e.clientY, slotY: e.clientY, insertAfter: null, insertBefore: null, groupOrderIdx: groupOrderRef.current.length });
+            }}
+            className="text-xs px-2 py-1.5 border border-blue-700 rounded
+                       text-blue-300 bg-blue-950/30 hover:bg-blue-900/40
+                       cursor-pointer transition-colors shrink-0 select-none"
+            title="按住拖拽到列表中创建分组"
+          >
+            + 分组
+          </button>
+        </div>
       </div>
 
+      {/* Scrollable cards area */}
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div ref={listRef}>
       {/* Mod cards */}
       {filtered.length === 0 ? (
         <p className="text-sm text-slate-500 text-center py-8">
@@ -1391,8 +1375,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
         </p>
       ) : (
         (() => {
-          const isCustomSort = sortKey === "custom";
-          const ds = isCustomSort ? dragState : null;
+          const ds = dragState;
           const active = ds?.started;
 
           // Build render items: interleave ungrouped cards and groups based on displayOrder.
@@ -1548,7 +1531,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
           }
 
           // Group header drag placeholder
-          const ghds = isCustomSort ? groupHeaderDragState : null;
+          const ghds = groupHeaderDragState;
           const ghActive = ghds?.started && ghds.sourceIdx !== ghds.currentIdx;
           let groupHeaderSlotIdx = -1;
           if (ghActive) {
@@ -1623,7 +1606,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
                     onMouseDown={(e) => {
                       const target = e.target as HTMLElement;
                       if (target.closest("button, input, label, select")) return;
-                      if (isCustomSort) handleGroupHeaderDragMouseDown(e, group.id);
+                      handleGroupHeaderDragMouseDown(e, group.id);
                     }}
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg border select-none ${
                       dragOverGroupId === group.id
@@ -1729,7 +1712,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
                       saveModSettings();
                     }}
                     onOrderChange={(order) => handleOrderChange(item.key, order)}
-                    onDragMouseDown={isCustomSort ? handleDragMouseDown : undefined}
+                    onDragMouseDown={handleDragMouseDown}
                     isDragging={dragging}
                     isDragOver={false}
                     viewMode={viewMode}
@@ -1741,18 +1724,20 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
         })()
       )}
 
-      {/* Footer stats */}
-      <div className="flex items-center justify-between px-1 pt-2 text-xs text-slate-500">
-        <span>
-          共 {mods.length} 个 Mod | {enabledCount} 已启用
-          {filtered.length !== mods.length && (
-            <span className="text-slate-400"> | 显示 {filtered.length} 个</span>
+        {/* Footer stats */}
+        <div className="flex items-center justify-between px-1 pt-2 text-xs text-slate-500">
+          <span>
+            共 {mods.length} 个 Mod | {enabledCount} 已启用
+            {filtered.length !== mods.length && (
+              <span className="text-slate-400"> | 显示 {filtered.length} 个</span>
+            )}
+          </span>
+          {saving && (
+            <span className="text-blue-400">保存中...</span>
           )}
-        </span>
-        {saving && (
-          <span className="text-blue-400">保存中...</span>
-        )}
+        </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

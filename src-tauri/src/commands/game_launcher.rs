@@ -227,3 +227,20 @@ pub fn open_steam_workshop(file_id: String) -> Result<(), String> {
         .map_err(|e| format!("打开工坊失败: {e}"))?;
     Ok(())
 }
+
+/// Open a Steam Workshop item page in the default browser
+#[tauri::command]
+pub fn open_workshop_url(file_id: String) -> Result<(), String> {
+    bg_cmd("cmd")
+        .args([
+            "/C",
+            "start",
+            &format!(
+                "https://steamcommunity.com/sharedfiles/filedetails/?id={}",
+                file_id
+            ),
+        ])
+        .spawn()
+        .map_err(|e| format!("打开浏览器失败: {e}"))?;
+    Ok(())
+}

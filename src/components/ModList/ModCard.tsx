@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ModInfo } from "../../lib/types";
 import { renderColoredText } from "../../utils/renderColoredText";
-import { openInExplorer, openSteamWorkshop } from "../../lib/tauriApi";
+import { openInExplorer, openSteamWorkshop, openWorkshopUrl } from "../../lib/tauriApi";
 
 interface Props {
   mod: ModInfo;
@@ -351,16 +351,35 @@ export default function ModCard({
         {/* Open folder + Workshop link */}
         <div className="flex items-center gap-2">
           {mod.source === 1 && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                openSteamWorkshop(mod.fileId).catch(() => {});
-              }}
-              title="在 Steam 工坊中查看"
-              className="text-[10px] text-slate-600 hover:text-blue-400 cursor-pointer transition-colors"
-            >
-              访问工坊
-            </button>
+            <div className="relative group inline-flex items-center">
+              <button
+                onClick={(e) => e.stopPropagation()}
+                className="text-[12px] text-slate-600 group-hover:invisible cursor-pointer transition-colors"
+              >
+                访问
+              </button>
+              <span className="absolute inset-y-0 right-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openWorkshopUrl(mod.fileId).catch(() => {});
+                  }}
+                  className="text-[12px] text-slate-600 hover:text-blue-400 cursor-pointer transition-colors"
+                >
+                  浏览器
+                </button>
+                <span className="text-slate-700">·</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openSteamWorkshop(mod.fileId).catch(() => {});
+                  }}
+                  className="text-[12px] text-slate-600 hover:text-blue-400 cursor-pointer transition-colors"
+                >
+                  创意工坊
+                </button>
+              </span>
+            </div>
           )}
           <button
             onClick={(e) => {
@@ -368,7 +387,7 @@ export default function ModCard({
               openInExplorer(mod.dirPath).catch(() => {});
             }}
             title="打开 Mod 所在文件夹"
-            className="text-[10px] text-slate-600 hover:text-slate-400 cursor-pointer transition-colors"
+            className="text-[12px] text-slate-600 hover:text-slate-400 cursor-pointer transition-colors"
           >
             打开目录
           </button>

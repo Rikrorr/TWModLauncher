@@ -33,6 +33,7 @@ pub fn run() {
             commands::game_launcher::check_game_running,
             commands::game_launcher::kill_game,
             commands::game_launcher::open_steam_workshop,
+            commands::game_launcher::open_workshop_url,
             commands::profiles::list_profiles,
             commands::profiles::save_profile,
             commands::profiles::load_profile,

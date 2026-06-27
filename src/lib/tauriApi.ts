@@ -120,3 +120,8 @@ export async function openInExplorer(path: string): Promise<void> {
 export async function openSteamWorkshop(fileId: number): Promise<void> {
   return invoke("open_steam_workshop", { fileId: fileId.toString() });
 }
+
+/** Open a Steam Workshop item page in the default browser */
+export async function openWorkshopUrl(fileId: number): Promise<void> {
+  return invoke("open_workshop_url", { fileId: fileId.toString() });
+}

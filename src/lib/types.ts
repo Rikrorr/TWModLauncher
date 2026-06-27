@@ -84,12 +84,29 @@ export interface ProfileMeta {
   modCount: number;
 }
 
+/** Minimal mod metadata stored in profiles for missing-mod detection */
+export interface ModMeta {
+  title: string;
+  author: string;
+  source: number; // 1 = Workshop, 0 = Local
+  fileId: number;
+  version?: string;
+}
+
 /** Full profile data saved to disk */
 export interface ProfileData {
+  /** Profile format version for forward compatibility */
+  version: number;
   name: string;
   createdAt: string;
   gamePath: string;
   enabledMods: string[];
   modOrder: Record<string, number>;
   modSettings: Record<string, Record<string, unknown>>;
+  /** Virtual mod groups */
+  groups: ModGroup[];
+  /** Group ordering */
+  groupOrder: string[];
+  /** Mod metadata keyed by modKey, for missing-mod detection on import */
+  modMeta: Record<string, ModMeta>;
 }
