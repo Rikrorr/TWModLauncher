@@ -36,9 +36,9 @@ export function collectModSettingsData(mods: ModInfo[]): ModSettingsData {
 const log = createLogger("generateModSettings");
 
 export function patchModSettingsLua(raw: string, data: ModSettingsData): string {
-  log.debug("[patchModSettingsLua] templateRaw length:", raw.length);
-  log.debug("[patchModSettingsLua] templateRaw first 200 chars:", raw.slice(0, 200));
-  log.debug("[patchModSettingsLua] data:", JSON.stringify(data));
+  log.debug(`[patchModSettingsLua] templateRaw length: ${raw.length}`);
+  log.debug(`[patchModSettingsLua] templateRaw first 200 chars: ${raw.slice(0, 200)}`);
+  log.debug(`[patchModSettingsLua] data: ${JSON.stringify(data)}`);
 
   let result = raw;
 
@@ -53,10 +53,10 @@ export function patchModSettingsLua(raw: string, data: ModSettingsData): string 
   // Validate the generated Lua syntax
   try {
     luaparse.parse(result);
-    log.debug("[patchModSettingsLua] output syntax: VALID, length:", result.length);
+    log.debug(`[patchModSettingsLua] output syntax: VALID, length: ${result.length}`);
   } catch (e) {
-    log.error("[patchModSettingsLua] output syntax: INVALID!", String(e));
-    log.debug("[patchModSettingsLua] output first 500 chars:", result.slice(0, 500));
+    log.error(`[patchModSettingsLua] output syntax: INVALID! ${String(e)}`);
+    log.debug(`[patchModSettingsLua] output first 500 chars: ${result.slice(0, 500)}`);
   }
 
   return result;
@@ -220,10 +220,10 @@ export function generateModSettingsLua(data: ModSettingsData): string {
   // Validate the generated Lua syntax
   try {
     luaparse.parse(result);
-    log.debug("[generateModSettingsLua] output syntax: VALID, length:", result.length);
+    log.debug(`[generateModSettingsLua] output syntax: VALID, length: ${result.length}`);
   } catch (e) {
-    log.error("[generateModSettingsLua] output syntax: INVALID!", String(e));
-    log.debug("[generateModSettingsLua] output:", result.slice(0, 500));
+    log.error(`[generateModSettingsLua] output syntax: INVALID! ${String(e)}`);
+    log.debug(`[generateModSettingsLua] output: ${result.slice(0, 500)}`);
   }
 
   return result;

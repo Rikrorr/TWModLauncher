@@ -46,15 +46,15 @@ export default function ModCard({
     (e: React.MouseEvent) => {
       const key = `${mod.source}_${mod.fileId}`;
       if (!onDragMouseDown) {
-        log.debug("[drag-card] mousedown ignored: no onDragMouseDown for", key);
+        log.debug(`[drag-card] mousedown ignored: no onDragMouseDown for ${key}`);
         return;
       }
       const target = e.target as HTMLElement;
       if (target.closest(INTERACTIVE_SELECTOR)) {
-        log.debug("[drag-card] mousedown ignored: interactive target for", key, target.tagName);
+        log.debug(`[drag-card] mousedown ignored: interactive target for ${key} ${target.tagName}`);
         return;
       }
-      log.debug("[drag-card] mousedown -> onDragMouseDown for", key);
+      log.debug(`[drag-card] mousedown -> onDragMouseDown for ${key}`);
       onDragMouseDown(e, key);
     },
     [onDragMouseDown, mod.source, mod.fileId],

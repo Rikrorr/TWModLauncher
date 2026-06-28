@@ -404,10 +404,10 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
     (e: React.MouseEvent, key: string) => {
       const idx = displayOrder.indexOf(key);
       if (idx === -1) {
-        log.debug("[drag] mousedown skipped: key not in displayOrder", key);
+        log.debug(`[drag] mousedown skipped: key not in displayOrder ${key}`);
         return;
       }
-      log.debug("[drag] mousedown start key=", key, "idx=", idx, "displayOrder.length=", displayOrder.length);
+      log.debug(`[drag] mousedown start key=${key} idx=${idx} displayOrder.length=${displayOrder.length}`);
       e.preventDefault();
       preventClickRef.current = true;
 
@@ -709,12 +709,12 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
       }
 
       if (targetDisplayIdx === -1) {
-        log.debug("[drag] mousemove: targetDisplayIdx -1, closestKey=", closestKey);
+        log.debug(`[drag] mousemove: targetDisplayIdx -1, closestKey=${closestKey}`);
         return;
       }
 
       if (!ds.started || targetDisplayIdx !== ds.currentIdx || slotBeforeGroupId !== ds.slotBeforeGroupId) {
-        log.debug("[drag] mousemove closestKey=", closestKey, "targetDisplayIdx=", targetDisplayIdx, "overGroup=", dragOverGroupRef.current, "draggedGroupId=", draggedGroupId, "slotBeforeGroupId=", slotBeforeGroupId);
+        log.debug(`[drag] mousemove closestKey=${closestKey} targetDisplayIdx=${targetDisplayIdx} overGroup=${dragOverGroupRef.current} draggedGroupId=${draggedGroupId} slotBeforeGroupId=${slotBeforeGroupId}`);
       }
 
       setDragState((prev) =>
@@ -732,7 +732,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
     const handleMouseUp = () => {
       const ds = dragStateRef.current;
       const targetGroupId = dragOverGroupRef.current;
-      log.debug("[drag] mouseup sourceKey=", ds?.sourceKey, "started=", ds?.started, "sourceIdx=", ds?.sourceIdx, "currentIdx=", ds?.currentIdx, "dragOverGroup=", targetGroupId, "slotBeforeGroupId=", ds?.slotBeforeGroupId);
+      log.debug(`[drag] mouseup sourceKey=${ds?.sourceKey} started=${ds?.started} sourceIdx=${ds?.sourceIdx} currentIdx=${ds?.currentIdx} dragOverGroup=${targetGroupId} slotBeforeGroupId=${ds?.slotBeforeGroupId}`);
       setDragState(null);
       if (ds?.started) {
         setTimeout(() => {
@@ -873,7 +873,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
         }
 
         if (targetIdx !== ds.currentIdx || ds.slotBeforeKey) {
-          log.debug("[group-drag] mousemove closestGid=", closestGid, "targetIdx=", targetIdx);
+          log.debug(`[group-drag] mousemove closestGid=${closestGid} targetIdx=${targetIdx}`);
         }
 
         setGroupHeaderDragState((prev) =>
@@ -883,7 +883,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
         // Card-level target: store slotBeforeKey for rendering, keep currentIdx unchanged
         const changed = ds.slotBeforeKey !== closestCardKey || ds.insertAfter !== !closestCardAbove;
         if (changed) {
-          log.debug("[group-drag] mousemove cardTarget=", closestCardKey, "above=", closestCardAbove);
+          log.debug(`[group-drag] mousemove cardTarget=${closestCardKey} above=${closestCardAbove}`);
         }
         setGroupHeaderDragState((prev) =>
           prev ? { ...prev, slotBeforeKey: changed ? closestCardKey! : prev.slotBeforeKey, insertAfter: changed ? !closestCardAbove : prev.insertAfter } : null,
@@ -894,7 +894,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
 
     const handleMouseUp = () => {
       const ds = groupHeaderDragStateRef.current;
-      log.debug("[group-drag] mouseup sourceGroupId=", ds?.sourceGroupId, "started=", ds?.started, "sourceIdx=", ds?.sourceIdx, "currentIdx=", ds?.currentIdx, "slotBeforeKey=", ds?.slotBeforeKey);
+      log.debug(`[group-drag] mouseup sourceGroupId=${ds?.sourceGroupId} started=${ds?.started} sourceIdx=${ds?.sourceIdx} currentIdx=${ds?.currentIdx} slotBeforeKey=${ds?.slotBeforeKey}`);
       setGroupHeaderDragState(null);
       if (ds?.started) {
         setTimeout(() => {
@@ -918,7 +918,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
               if (idx === -1) idx = filtered.length;
               if (ds.insertAfter) idx += 1;
               filtered.splice(idx, 0, ...moved);
-              log.debug("[group-drag] mouseup moved group cards to displayOrder idx=", idx, "insertAfter=", ds.insertAfter, "moved=", moved.length, "cards");
+              log.debug(`[group-drag] mouseup moved group cards to displayOrder idx=${idx} insertAfter=${ds.insertAfter} moved=${moved.length} cards`);
               return filtered;
             });
           } else if (group && group.modKeys.length === 0) {
@@ -934,7 +934,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
                   : g,
               ),
             );
-            log.debug("[group-drag] mouseup set anchor for empty group, anchorBefore=", ds.insertAfter ? undefined : ds.slotBeforeKey, "anchorAfter=", ds.insertAfter ? ds.slotBeforeKey : undefined);
+            log.debug(`[group-drag] mouseup set anchor for empty group, anchorBefore=${ds.insertAfter ? undefined : ds.slotBeforeKey} anchorAfter=${ds.insertAfter ? ds.slotBeforeKey : undefined}`);
           }
         } else if (ds.sourceIdx !== ds.currentIdx) {
           // Group-level target: reorder groupOrder
@@ -1019,7 +1019,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
       // Only update state when position actually changes (prevents flicker from re-renders)
       const changed = !gc.active || gc.insertAfter !== insertAfter || gc.insertBefore !== insertBefore || gc.groupOrderIdx !== goIdx;
       if (changed) {
-        log.debug("[group-create] mousemove closestKey=", closestKey, "insertAfter=", insertAfter, "insertBefore=", insertBefore, "groupOrderIdx=", goIdx, "groupOrder.length=", groupOrderRef.current.length, "positions.size=", positions.size, "gHeaders.size=", gHeaders.size, "scrollDelta=", scrollDelta);
+        log.debug(`[group-create] mousemove closestKey=${closestKey} insertAfter=${insertAfter} insertBefore=${insertBefore} groupOrderIdx=${goIdx} groupOrder.length=${groupOrderRef.current.length} positions.size=${positions.size} gHeaders.size=${gHeaders.size} scrollDelta=${scrollDelta}`);
         setGroupCreateState({ active: true, startY: gc.startY, slotY, insertAfter, insertBefore, groupOrderIdx: goIdx });
       }
     };
@@ -1027,7 +1027,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
     const handleMouseUp = () => {
       const gc = groupCreateRef.current;
       if (!gc) return;
-      log.debug("[group-create] mouseup active=", gc.active, "insertAfter=", gc.insertAfter, "insertBefore=", gc.insertBefore, "groupOrderIdx=", gc.groupOrderIdx);
+      log.debug(`[group-create] mouseup active=${gc.active} insertAfter=${gc.insertAfter} insertBefore=${gc.insertBefore} groupOrderIdx=${gc.groupOrderIdx}`);
 
       // Create new group with card-level anchor so the empty group
       // renders between cards, not just at top/bottom relative to other groups.
@@ -1484,13 +1484,13 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
                 (item) => item.type === "mod" && item.key === group.anchorBefore,
               );
               insertAt = idx === -1 ? 0 : idx;
-              log.debug("[group-create] anchor anchorBefore=", group.anchorBefore, "idx=", idx, "insertAt=", insertAt);
+              log.debug(`[group-create] anchor anchorBefore=${group.anchorBefore} idx=${idx} insertAt=${insertAt}`);
             } else if (group.anchorAfter) {
               const idx = renderItems.findIndex(
                 (item) => item.type === "mod" && item.key === group.anchorAfter,
               );
               insertAt = idx === -1 ? renderItems.length : idx + 1;
-              log.debug("[group-create] anchor anchorAfter=", group.anchorAfter, "idx=", idx, "insertAt=", insertAt, "renderItems.length=", renderItems.length);
+              log.debug(`[group-create] anchor anchorAfter=${group.anchorAfter} idx=${idx} insertAt=${insertAt} renderItems.length=${renderItems.length}`);
             } else if (groupOrder.length === 1) {
               insertAt = 0;
             } else {
@@ -1526,7 +1526,7 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
             } else {
               placeholderIdx = 0;
             }
-            log.debug("[group-create] render placeholderIdx=", placeholderIdx, "insertAfter=", groupCreateState.insertAfter, "insertBefore=", groupCreateState.insertBefore, "groupOrderIdx=", groupCreateState.groupOrderIdx);
+            log.debug(`[group-create] render placeholderIdx=${placeholderIdx} insertAfter=${groupCreateState.insertAfter} insertBefore=${groupCreateState.insertBefore} groupOrderIdx=${groupCreateState.groupOrderIdx}`);
             renderItems.splice(placeholderIdx, 0, {
               type: "group-creation-placeholder",
               group: null,
