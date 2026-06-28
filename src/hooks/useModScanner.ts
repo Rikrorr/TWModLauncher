@@ -1,3 +1,4 @@
+import { createLogger } from "../lib/logger";
 import { useCallback } from "react";
 import { scanMods } from "../lib/tauriApi";
 import {
@@ -74,7 +75,7 @@ function parseScanResult(
         updatedAt: formatDate(entry.modified_at),
       });
     } catch (e) {
-      console.error(`[scanMods] Failed to parse entry ${entry.file_id}:`, e);
+      log.error(`Failed to parse entry ${entry.file_id}: ${String(e)}`);
       mods.push({
         fileId: Number(entry.file_id) || hashStr(entry.file_id),
         title: `Mod #${entry.file_id} (解析失败)`,
@@ -103,6 +104,8 @@ function parseScanResult(
   return mods;
 }
 
+const log = createLogger("useModScanner");
+
 export function useModScanner() {
   const setMods = useModStore((s) => s.setMods);
   const setScanning = useModStore((s) => s.setScanning);
@@ -115,12 +118,7 @@ export function useModScanner() {
       setError(null);
       try {
         const result = await scanMods(gamePath);
-        console.log(
-          "[scanMods] got",
-          result.entries.length,
-          "entries, modSettings raw length:",
-          result.mod_settings_raw.length,
-        );
+        log.debug(`got ${result.entries.length} entries, modSettings raw length: ${result.mod_settings_raw.length}`);
 
         let ms = parseModSettingsSafe(result.mod_settings_raw);
         const mods = parseScanResult(result, ms);
@@ -128,7 +126,7 @@ export function useModScanner() {
         setMods(mods);
         setTemplateRaw(result.mod_settings_raw);
       } catch (e) {
-        console.error("[scanMods] Fatal:", e);
+        log.error(`Fatal: ${String(e)}`);
         setError(`扫描失败: ${String(e)}`);
       } finally {
         setScanning(false);
@@ -186,7 +184,7 @@ export function useModScanner() {
 
         return { added: added.length, removed: removed.length };
       } catch (e) {
-        console.error("[rescanMods] Fatal:", e);
+        log.error(`Fatal: ${String(e)}`);
         return { added: 0, removed: 0 };
       } finally {
         setScanning(false);
@@ -202,7 +200,7 @@ function parseModSettingsSafe(raw: string): ParsedModSettings {
   try {
     return parseModSettingsLua(raw);
   } catch (e) {
-    console.error("[scanMods] ModSettings parse failed:", e);
+    log.error(`ModSettings parse failed: ${String(e)}`);
     return { enabledWorkshopMods: [], enabledLocalMods: [], modOrder: {} };
   }
 }

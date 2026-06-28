@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import type { ModInfo } from "../../lib/types";
 import { renderColoredText } from "../../utils/renderColoredText";
 import { openInExplorer, openSteamWorkshop, openWorkshopUrl } from "../../lib/tauriApi";
+import { createLogger } from "../../lib/logger";
 
 interface Props {
   mod: ModInfo;
@@ -19,6 +20,8 @@ interface Props {
 }
 
 const INTERACTIVE_SELECTOR = "button, input, label, select, [data-no-drag]";
+
+const log = createLogger("ModCard");
 
 export default function ModCard({
   mod,
@@ -43,15 +46,15 @@ export default function ModCard({
     (e: React.MouseEvent) => {
       const key = `${mod.source}_${mod.fileId}`;
       if (!onDragMouseDown) {
-        console.log("[drag-card] mousedown ignored: no onDragMouseDown for", key);
+        log.debug("[drag-card] mousedown ignored: no onDragMouseDown for", key);
         return;
       }
       const target = e.target as HTMLElement;
       if (target.closest(INTERACTIVE_SELECTOR)) {
-        console.log("[drag-card] mousedown ignored: interactive target for", key, target.tagName);
+        log.debug("[drag-card] mousedown ignored: interactive target for", key, target.tagName);
         return;
       }
-      console.log("[drag-card] mousedown -> onDragMouseDown for", key);
+      log.debug("[drag-card] mousedown -> onDragMouseDown for", key);
       onDragMouseDown(e, key);
     },
     [onDragMouseDown, mod.source, mod.fileId],

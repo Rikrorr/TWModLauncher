@@ -25,4 +25,9 @@ tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 dirs = "6.0"
+chrono = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "local-time"] }
+tracing-appender = "0.2"
+tracing-log = "0.2"
 base64 = "0.22"

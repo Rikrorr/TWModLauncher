@@ -11,6 +11,7 @@ import {
 import { useAppStore } from "../../store/useAppStore";
 import type { ModInfo, ModMeta, ProfileData, ProfileMeta } from "../../lib/types";
 import MissingModsDialog from "./MissingModsDialog";
+import { createLogger } from "../../lib/logger";
 
 interface Props {
   gamePath: string;
@@ -39,6 +40,8 @@ function detectMissingMods(data: ProfileData, mods: ModInfo[]): Map<string, ModM
   return missing;
 }
 
+const log = createLogger("ProfileManager");
+
 export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
   const [profiles, setProfiles] = useState<ProfileMeta[]>([]);
   const [open, setOpen] = useState(false);
@@ -54,7 +57,7 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
       const list = await listProfiles();
       setProfiles(list);
     } catch (e) {
-      console.error("[profile] refresh error:", e);
+      log.error(`refresh error: ${String(e)}`);
     }
   };
 

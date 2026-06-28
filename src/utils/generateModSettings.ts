@@ -1,3 +1,4 @@
+import { createLogger } from "../lib/logger";
 import luaparse from "luaparse";
 import type { ModInfo } from "../lib/types";
 
@@ -32,10 +33,12 @@ export function collectModSettingsData(mods: ModInfo[]): ModSettingsData {
  * Patch the original ModSettings.Lua raw text with current enabled/order data.
  * Only modifies the list items inside each section — format is 100% preserved.
  */
+const log = createLogger("generateModSettings");
+
 export function patchModSettingsLua(raw: string, data: ModSettingsData): string {
-  console.log("[patchModSettingsLua] templateRaw length:", raw.length);
-  console.log("[patchModSettingsLua] templateRaw first 200 chars:", raw.slice(0, 200));
-  console.log("[patchModSettingsLua] data:", JSON.stringify(data));
+  log.debug("[patchModSettingsLua] templateRaw length:", raw.length);
+  log.debug("[patchModSettingsLua] templateRaw first 200 chars:", raw.slice(0, 200));
+  log.debug("[patchModSettingsLua] data:", JSON.stringify(data));
 
   let result = raw;
 
@@ -50,10 +53,10 @@ export function patchModSettingsLua(raw: string, data: ModSettingsData): string 
   // Validate the generated Lua syntax
   try {
     luaparse.parse(result);
-    console.log("[patchModSettingsLua] output syntax: VALID, length:", result.length);
+    log.debug("[patchModSettingsLua] output syntax: VALID, length:", result.length);
   } catch (e) {
-    console.error("[patchModSettingsLua] output syntax: INVALID!", String(e));
-    console.log("[patchModSettingsLua] output first 500 chars:", result.slice(0, 500));
+    log.error("[patchModSettingsLua] output syntax: INVALID!", String(e));
+    log.debug("[patchModSettingsLua] output first 500 chars:", result.slice(0, 500));
   }
 
   return result;
@@ -217,10 +220,10 @@ export function generateModSettingsLua(data: ModSettingsData): string {
   // Validate the generated Lua syntax
   try {
     luaparse.parse(result);
-    console.log("[generateModSettingsLua] output syntax: VALID, length:", result.length);
+    log.debug("[generateModSettingsLua] output syntax: VALID, length:", result.length);
   } catch (e) {
-    console.error("[generateModSettingsLua] output syntax: INVALID!", String(e));
-    console.log("[generateModSettingsLua] output:", result.slice(0, 500));
+    log.error("[generateModSettingsLua] output syntax: INVALID!", String(e));
+    log.debug("[generateModSettingsLua] output:", result.slice(0, 500));
   }
 
   return result;

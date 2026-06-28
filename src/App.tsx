@@ -1,3 +1,4 @@
+import { createLogger } from "./lib/logger";
 import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
@@ -10,6 +11,7 @@ import {
   writeModSettings,
   loadConfig,
   saveConfig,
+  openLogDir,
 } from "./lib/tauriApi";
 import { collectModSettingsData, patchModSettingsLua, generateModSettingsLua } from "./utils/generateModSettings";
 import { useAppStore } from "./store/useAppStore";
@@ -19,6 +21,8 @@ import type { ProfileData } from "./lib/types";
 import ModList from "./components/ModList/ModList";
 import SettingsEditor from "./components/SettingsEditor/SettingsEditor";
 import ProfileManager from "./components/ProfileManager/ProfileManager";
+
+const log = createLogger("App");
 
 function App() {
   const gamePath = useAppStore((s) => s.gamePath);
@@ -250,7 +254,7 @@ function App() {
         : generateModSettingsLua(data);
       await writeModSettings(gamePath!, lua);
     } catch (e) {
-      console.error("写回 ModSettings.Lua 失败:", e);
+      log.error(`写回 ModSettings.Lua 失败: ${String(e)}`);
     }
   };
 
@@ -297,6 +301,14 @@ function App() {
               mods={mods}
               onLoad={handleProfileLoad}
             />
+            <button
+              onClick={() => openLogDir().catch(() => {})}
+              title="打开日志目录"
+              className="text-xs px-2.5 py-1 border border-slate-600 hover:border-slate-400
+                         text-slate-400 rounded transition-colors cursor-pointer shrink-0"
+            >
+              日志
+            </button>
             <button
               onClick={handleSaveAll}
               className="text-xs px-2.5 py-1 border border-slate-600 hover:border-slate-400

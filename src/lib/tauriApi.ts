@@ -125,3 +125,8 @@ export async function openSteamWorkshop(fileId: number): Promise<void> {
 export async function openWorkshopUrl(fileId: number): Promise<void> {
   return invoke("open_workshop_url", { fileId: fileId.toString() });
 }
+
+/** Open the logs directory in the system file explorer */
+export async function openLogDir(): Promise<void> {
+  return invoke("open_log_dir");
+}

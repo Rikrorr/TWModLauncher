@@ -1,6 +1,8 @@
 mod commands;
+mod logging;
 
 use std::sync::Mutex;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -11,13 +13,14 @@ pub fn run() {
             pid: Mutex::new(None),
         })
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            // Set up file + console logging (both debug and release)
+            let data_dir = app
+                .path()
+                .app_data_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."));
+            logging::init(data_dir);
+            logging::set_panic_hook();
+            log::info!("TWModLauncher started (v{})", env!("CARGO_PKG_VERSION"));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -43,6 +46,8 @@ pub fn run() {
             commands::config::load_config,
             commands::config::save_config,
             commands::file_io::open_in_explorer,
+            commands::logging::log_event,
+            commands::logging::open_log_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

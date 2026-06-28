@@ -5,3 +5,4 @@ pub mod mod_settings;
 pub mod config;
 pub mod file_io;
 pub mod profiles;
+pub mod logging;
