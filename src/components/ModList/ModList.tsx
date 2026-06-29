@@ -316,34 +316,6 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
     [setModOrder, saveModSettings],
   );
 
-  const handleApplyOrder = useCallback(() => {
-    const currentMods = useModStore.getState().mods;
-    const keyModMap = new Map(currentMods.map((m) => [`${m.source}_${m.fileId}`, m]));
-    const updates: [string, number][] = [];
-
-    let nextOrder = 0;
-    // Process displayOrder first
-    for (const key of displayOrder) {
-      const mod = keyModMap.get(key);
-      if (mod?.enabled) {
-        updates.push([key, nextOrder++]);
-        keyModMap.delete(key);
-      }
-    }
-    // Remaining enabled mods not in displayOrder
-    for (const [key, mod] of keyModMap) {
-      if (mod.enabled) {
-        updates.push([key, nextOrder++]);
-      }
-    }
-
-    for (const [key, order] of updates) {
-      setModOrder(key, order);
-    }
-    saveModSettings();
-    setLastMessage(`已应用加载顺序 — ${updates.length} 个已启用 Mod 从 0 递增`);
-  }, [displayOrder, setModOrder, saveModSettings, setLastMessage]);
-
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
 
   const handleDeleteGroup = useCallback((groupId: string) => {
@@ -396,6 +368,62 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
   }, [groups]);
   const modGroupMapRef = useRef(modGroupMap);
   modGroupMapRef.current = modGroupMap;
+
+  const handleApplyOrder = useCallback(() => {
+    const currentMods = useModStore.getState().mods;
+    const keyModMap = new Map(currentMods.map((m) => [`${m.source}_${m.fileId}`, m]));
+    const updates: [string, number][] = [];
+
+    let nextOrder = 0;
+    const emittedGroups = new Set<string>();
+
+    // Walk displayOrder and emit mods in visual rendering order.
+    // When a group is first encountered, emit ALL its members contiguously
+    // (sorted by displayOrder), matching how the list is visually rendered.
+    // See renderItems construction: a group cluster renders at the position
+    // of its first member in displayOrder.
+    for (const key of displayOrder) {
+      if (!keyModMap.has(key)) continue;
+
+      const gid = modGroupMap.get(key);
+      if (gid) {
+        if (emittedGroups.has(gid)) continue;
+        emittedGroups.add(gid);
+        const group = groups.find((g) => g.id === gid);
+        if (group) {
+          const sorted = group.modKeys
+            .filter((mk) => keyModMap.has(mk))
+            .sort((a, b) => displayOrder.indexOf(a) - displayOrder.indexOf(b));
+          for (const mk of sorted) {
+            const mod = keyModMap.get(mk)!;
+            if (mod.enabled) {
+              updates.push([mk, nextOrder++]);
+            }
+            keyModMap.delete(mk);
+          }
+        }
+      } else {
+        const mod = keyModMap.get(key)!;
+        if (mod.enabled) {
+          updates.push([key, nextOrder++]);
+        }
+        keyModMap.delete(key);
+      }
+    }
+
+    // Remaining enabled mods not in displayOrder (newly added, etc.)
+    for (const [key, mod] of keyModMap) {
+      if (mod.enabled) {
+        updates.push([key, nextOrder++]);
+      }
+    }
+
+    for (const [key, order] of updates) {
+      setModOrder(key, order);
+    }
+    saveModSettings();
+    setLastMessage(`已应用加载顺序 — ${updates.length} 个已启用 Mod 从 0 递增`);
+  }, [displayOrder, groups, modGroupMap, setModOrder, saveModSettings, setLastMessage]);
 
   // Custom drag-and-drop (mouse-based, avoids HTML5 DnD browser quirks)
   const DRAG_THRESHOLD = 5;
