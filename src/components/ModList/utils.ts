@@ -127,7 +127,7 @@ function emitGroup(
   groups: ModGroup[],
   groupOrder: string[],
   filtered: ModInfo[],
-  modGroupMap: Map<string, string>,
+  _modGroupMap: Map<string, string>,
   items: RenderItem[],
   renderedModKeys: Set<string>,
   renderedGroupIds: Set<string>,

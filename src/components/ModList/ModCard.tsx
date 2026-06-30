@@ -39,6 +39,7 @@ export default function ModCard({
   const [localOrder, setLocalOrder] = useState(mod.order);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop change to local state
     setLocalOrder(mod.order);
   }, [mod.order]);
 

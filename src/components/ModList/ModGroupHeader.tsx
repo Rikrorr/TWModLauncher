@@ -9,6 +9,7 @@ interface Props {
   onRename: (groupId: string, name: string) => void;
   onDelete: (groupId: string) => void;
   onDragMouseDown: (e: React.MouseEvent, groupId: string) => void;
+  onContextMenu?: (e: React.MouseEvent, groupId: string) => void;
   onStartEdit: (groupId: string) => void;
   onStopEdit: () => void;
 }
@@ -22,6 +23,7 @@ export default function ModGroupHeader({
   onRename,
   onDelete,
   onDragMouseDown,
+  onContextMenu,
   onStartEdit,
   onStopEdit,
 }: Props) {
@@ -34,6 +36,10 @@ export default function ModGroupHeader({
         const target = e.target as HTMLElement;
         if (target.closest("button, input, label, select")) return;
         onDragMouseDown(e, group.id);
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu?.(e, group.id);
       }}
       className={`flex items-center gap-2 px-3 py-2 rounded-lg border select-none ${
         isDragTarget

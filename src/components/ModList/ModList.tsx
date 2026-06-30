@@ -8,6 +8,9 @@ import { collectModSettingsData, patchModSettingsLua, generateModSettingsLua } f
 import ModCard from "./ModCard";
 import ModFilterBar from "./ModFilterBar";
 import ModGroupHeader from "./ModGroupHeader";
+import ModContextMenu from "./ModContextMenu";
+import GroupContextMenu from "./GroupContextMenu";
+import { openInExplorer, openSteamWorkshop } from "../../lib/tauriApi";
 import { useModListState, type CategoryKey } from "./useModListState";
 import { useCardDrag } from "./useCardDrag";
 import { useGroupHeaderDrag } from "./useGroupHeaderDrag";
@@ -19,6 +22,7 @@ import {
   computeGroupDragCardInsertLineIdx,
   createDragRefs,
   type DragRefs,
+  type RenderItem,
 } from "./utils";
 
 interface Props {
@@ -70,9 +74,19 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
   // ── Group helpers ────────────────────────────────────────────────────────
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
 
+  // ── Context menu state ───────────────────────────────────────────────────
+  type ContextMenuState =
+    | { type: "mod"; key: string; x: number; y: number }
+    | { type: "group"; groupId: string; x: number; y: number }
+    | null;
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+
   const handleDeleteGroup = useCallback(
-    (groupId: string) => setGroups((prev) => prev.filter((g) => g.id !== groupId)),
-    [setGroups],
+    (groupId: string) => {
+      setGroups((prev) => prev.filter((g) => g.id !== groupId));
+      setGroupOrder((prev) => prev.filter((id) => id !== groupId));
+    },
+    [setGroups, setGroupOrder],
   );
 
   const handleToggleGroup = useCallback(
@@ -120,6 +134,117 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
       );
     },
     [setGroups],
+  );
+
+  // ── Context menu action handlers ──────────────────────────────────────────
+
+  const handleSendToGroup = useCallback(
+    (modKey: string, targetGroupId: string) => {
+      const targetGroup = groups.find((g) => g.id === targetGroupId);
+      const wasEmpty = targetGroup ? targetGroup.modKeys.length === 0 : false;
+      const order = filter.displayOrder;
+
+      // Compute insertion position BEFORE state changes (avoids stale closure)
+      let insertAfterIdx = -1;
+      if (wasEmpty && targetGroup) {
+        // Empty group: use anchor to find where the group visually sits
+        if (targetGroup.anchorBefore && order.indexOf(targetGroup.anchorBefore) !== -1) {
+          insertAfterIdx = order.indexOf(targetGroup.anchorBefore) - 1;
+        } else if (targetGroup.anchorAfter && order.indexOf(targetGroup.anchorAfter) !== -1) {
+          insertAfterIdx = order.indexOf(targetGroup.anchorAfter);
+        } else {
+          // No valid anchors — find the empty group's visual position from renderItems
+          const items = renderItemsRef.current;
+          const headerIdx = items.findIndex(
+            (item) => item.type === "group-header" && item.group.id === targetGroupId,
+          );
+          if (headerIdx !== -1) {
+            // Look for the nearest mod card before the group header
+            for (let i = headerIdx - 1; i >= 0; i--) {
+              const ri = items[i];
+              if (ri.type === "mod") {
+                insertAfterIdx = order.indexOf(ri.key);
+                break;
+              }
+            }
+            // If no mod before, look for the nearest mod after and insert before it
+            if (insertAfterIdx === -1) {
+              for (let i = headerIdx + 1; i < items.length; i++) {
+                const ri = items[i];
+                if (ri.type === "mod") {
+                  insertAfterIdx = order.indexOf(ri.key) - 1;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      } else if (targetGroup) {
+        // Non-empty group: insert after the last member
+        for (const mk of targetGroup.modKeys) {
+          const idx = order.indexOf(mk);
+          if (idx > insertAfterIdx) insertAfterIdx = idx;
+        }
+      }
+
+      // Move mod to target group (pass displayOrder so source group gets proper anchors)
+      handleMoveToGroup(modKey, targetGroupId, order);
+
+      // Reposition in displayOrder atomically.
+      // Must account for index shift: when modKey is removed from prev,
+      // elements after it shift left by 1, so the pre-computed insertAfterIdx
+      // may be off by one if modKey was before the target position.
+      const finalInsertAfterIdx = insertAfterIdx;
+      filter.setDisplayOrder((prev) => {
+        const next = prev.filter((k) => k !== modKey);
+        if (finalInsertAfterIdx === -1) {
+          next.push(modKey);
+        } else {
+          const modKeyOldIdx = prev.indexOf(modKey);
+          const shift = (modKeyOldIdx !== -1 && modKeyOldIdx <= finalInsertAfterIdx) ? 0 : 1;
+          const insertAt = Math.min(finalInsertAfterIdx + shift, next.length);
+          next.splice(insertAt, 0, modKey);
+        }
+        return next;
+      });
+    },
+    [handleMoveToGroup, groups, filter.displayOrder, filter.setDisplayOrder],
+  );
+
+  const handleCreateGroupAndSend = useCallback(
+    (modKey: string) => {
+      const newGroup: ModGroup = {
+        id: crypto.randomUUID(),
+        name: "新建分组",
+        collapsed: false,
+        modKeys: [modKey],
+      };
+      // Remove from old group and add to new group
+      setGroups((prev) => {
+        const updated = prev.map((g) => ({
+          ...g,
+          modKeys: g.modKeys.filter((k) => k !== modKey),
+        }));
+        return [...updated, newGroup];
+      });
+      setGroupOrder((prev) => [...prev, newGroup.id]);
+      // Trigger rename for the new group
+      setTimeout(() => setEditingGroupId(newGroup.id), 0);
+    },
+    [setGroups, setGroupOrder],
+  );
+
+  const handleUngroup = useCallback(
+    (groupId: string) => {
+      const group = groups.find((g) => g.id === groupId);
+      if (!group) return;
+      // Pass displayOrder so the emptied group gets a valid anchorAfter
+      const order = filter.displayOrder;
+      for (const mk of group.modKeys) {
+        handleMoveToGroup(mk, null, order);
+      }
+    },
+    [groups, handleMoveToGroup, filter.displayOrder],
   );
 
   // modKey → group lookup
@@ -245,7 +370,6 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
   const preventClickRef = dragRefs.preventClickRef;
 
   // ── Drag hooks ───────────────────────────────────────────────────────────
-  /* eslint-disable react-hooks/refs -- refs are updated via useLayoutEffect inside the hooks, not during render */
   const {
     dragState,
     dragOverGroupId,
@@ -281,7 +405,6 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
     groups,
     refs: dragRefs,
   });
-  /* eslint-enable react-hooks/refs */
 
   // ── Toggle handler ───────────────────────────────────────────────────────
   const handleToggle = useCallback(
@@ -342,6 +465,9 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
 
   const enabledCount = mods.filter((m) => m.enabled).length;
 
+  // ── Refs for context-menu position lookup ───────────────────────────────
+  const renderItemsRef = useRef<RenderItem[]>([]);
+
   // ── Render: loading / error / empty ──────────────────────────────────────
   if (scanning) {
     return (
@@ -381,6 +507,8 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
     modGroupMap,
     groupCreateState,
   );
+  // Keep ref in sync (direct assignment during render is safe for refs)
+  renderItemsRef.current = renderItems;
 
   const cardInsertLineIdx = computeCardInsertLineIdx(dragState, filter.displayOrder, dragOverGroupId, renderItems);
   const ghds = groupHeaderDragState;
@@ -439,7 +567,6 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
 
       {/* Scrollable cards area */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
-        {/* eslint-disable-next-line react-hooks/refs -- standard React ref attachment in JSX */}
         <div ref={listRef}>
           {filtered.length === 0 ? (
             <p className="text-sm text-slate-500 text-center py-8">没有匹配的 Mod</p>
@@ -473,14 +600,18 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
                       group={group}
                       isEditing={editingGroupId === group.id}
                       isDragging={
-                        groupHeaderDragState?.started &&
-                        groupHeaderDragState.sourceGroupId === group.id
+                        !!(groupHeaderDragState?.started &&
+                        groupHeaderDragState.sourceGroupId === group.id)
                       }
                       dragOverGroupId={dragOverGroupId}
                       onToggle={handleToggleGroup}
                       onRename={handleRenameGroup}
                       onDelete={handleDeleteGroup}
                       onDragMouseDown={handleGroupHeaderDragMouseDown}
+                      onContextMenu={(e, groupId) => {
+                        e.preventDefault();
+                        setContextMenu({ type: "group", groupId, x: e.clientX, y: e.clientY });
+                      }}
                       onStartEdit={setEditingGroupId}
                       onStopEdit={() => setEditingGroupId(null)}
                     />
@@ -506,6 +637,10 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
                   )}
                   <div
                     data-mod-key={item.key}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setContextMenu({ type: "mod", key: item.key, x: e.clientX, y: e.clientY });
+                    }}
                     className={`${item.indented ? "ml-6" : ""} ${
                       dragging
                         ? "scale-[0.98] opacity-40 z-10 relative transition-all duration-200"
@@ -561,6 +696,54 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
           </div>
         </div>
       </div>
+
+      {/* ── Context Menus (portalled to body) ──────────────────────────────── */}
+      {contextMenu?.type === "mod" && (() => {
+        const mod = mods.find((m) => `${m.source}_${m.fileId}` === contextMenu.key);
+        if (!mod) return null;
+        return (
+          <ModContextMenu
+            modKey={contextMenu.key}
+            mod={mod}
+            x={contextMenu.x}
+            y={contextMenu.y}
+            groups={groups}
+            currentGroupId={modGroupMap.get(contextMenu.key)}
+            onClose={() => setContextMenu(null)}
+            onToggle={toggleMod}
+            onSendToGroup={handleSendToGroup}
+            onCreateGroupAndSend={handleCreateGroupAndSend}
+            onOrderUp={() => {
+              setModOrder(contextMenu.key, Math.max(0, mod.order - 1));
+              saveModSettings();
+            }}
+            onOrderDown={() => {
+              setModOrder(contextMenu.key, mod.order + 1);
+              saveModSettings();
+            }}
+            onOpenInExplorer={() => openInExplorer(mod.dirPath).catch(() => {})}
+            onOpenWorkshop={() => openSteamWorkshop(mod.fileId).catch(() => {})}
+            onViewDetail={() => onSelectMod(contextMenu.key)}
+          />
+        );
+      })()}
+
+      {contextMenu?.type === "group" && (() => {
+        const group = groups.find((g) => g.id === contextMenu.groupId);
+        if (!group) return null;
+        return (
+          <GroupContextMenu
+            group={group}
+            x={contextMenu.x}
+            y={contextMenu.y}
+            onClose={() => setContextMenu(null)}
+            onRename={(id) => setEditingGroupId(id)}
+            onToggleCollapse={handleToggleGroup}
+            onDelete={handleDeleteGroup}
+            onUngroup={handleUngroup}
+          />
+        );
+      })()}
     </>
   );
 }
