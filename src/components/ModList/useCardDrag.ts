@@ -144,14 +144,24 @@ export function useCardDrag({
       let slotBeforeGroupId: string | undefined;
 
       if (!hoveringOverGroup && !draggedGroupId) {
-        const go = groupOrderRef.current;
-        const gHeaders = refs.groupHeaderPositionsRef.current;
-        for (let i = 0; i < go.length; i++) {
-          const gh = gHeaders.get(go[i]);
-          if (!gh) continue;
-          if (e.clientY < gh.top - scrollDelta) {
-            slotBeforeGroupId = go[i];
-            break;
+        // Only set slotBeforeGroupId when the cursor is in the gap between
+        // the last target card and the group header. Without this check,
+        // e.clientY < gh.top is true for ANY cursor above the group header,
+        // even when hovering between two ungrouped cards far above it.
+        const lastTargetBottom =
+          targets.length > 0
+            ? targets[targets.length - 1].bottom
+            : -Infinity;
+        if (targets.length === 0 || e.clientY > lastTargetBottom) {
+          const go = groupOrderRef.current;
+          const gHeaders = refs.groupHeaderPositionsRef.current;
+          for (let i = 0; i < go.length; i++) {
+            const gh = gHeaders.get(go[i]);
+            if (!gh) continue;
+            if (e.clientY < gh.top - scrollDelta) {
+              slotBeforeGroupId = go[i];
+              break;
+            }
           }
         }
       }
@@ -205,14 +215,35 @@ export function useCardDrag({
           }
         }
       } else if (targets.length === 0) {
-        targetDisplayIdx = draggedGroupId ? ds.currentIdx : 0;
+        // No valid card targets — compute position from cursor relative to
+        // group boundaries so ungrouped cards can still be reordered.
+        if (draggedGroupId) {
+          targetDisplayIdx = ds.currentIdx;
+        } else if (slotBeforeGroupId) {
+          // Cursor is above a group — insert before its first member
+          const beforeGroup = groups.find((g) => g.id === slotBeforeGroupId);
+          if (beforeGroup) {
+            let minIdx = disp.length;
+            for (const mk of beforeGroup.modKeys) {
+              const idx = disp.indexOf(mk);
+              if (idx !== -1 && idx < minIdx) minIdx = idx;
+            }
+            targetDisplayIdx = minIdx < disp.length ? minIdx : disp.length;
+          } else {
+            targetDisplayIdx = ds.sourceIdx;
+          }
+        } else {
+          // Cursor is below all groups or in empty area
+          const sourcePos = positions.get(ds.sourceKey);
+          if (sourcePos) {
+            const sourceBottom = sourcePos.top + sourcePos.height - scrollDelta;
+            targetDisplayIdx = e.clientY > sourceBottom ? disp.length : ds.sourceIdx;
+          } else {
+            targetDisplayIdx = ds.sourceIdx;
+          }
+        }
       }
 
-      // Suppress no-op: inserting right after source is equivalent to staying
-      // in place — after splice removal the adjusted index is sourceIdx.
-      if (targetDisplayIdx === ds.sourceIdx + 1) {
-        targetDisplayIdx = ds.sourceIdx;
-      }
 
       // ── Group boundary detection ──
       // Determine if a grouped card is exiting its source group.
@@ -258,8 +289,10 @@ export function useCardDrag({
         }
       }
 
-      // Snap outside group boundaries
-      if (!draggedGroupId && !hoveringOverGroup) {
+      // Snap to group boundaries. Runs for all ungrouped card drags
+      // (including when hovering over a group) to prevent interleaving
+      // ungrouped cards between group members in displayOrder.
+      if (!draggedGroupId) {
         for (const gid of groupOrderRef.current) {
           const group = groups.find((g) => g.id === gid);
           if (!group || group.modKeys.length === 0) continue;
@@ -341,9 +374,10 @@ export function useCardDrag({
           });
         }
 
-        if (targetGroupId && targetGroupId !== ds.sourceGroupId) {
+        if (targetGroupId && targetGroupId !== ds.sourceGroupId && !ds.slotBeforeGroupId) {
           // Dropped onto a DIFFERENT group (or entering from ungrouped) →
-          // move card to that group
+          // move card to that group. Skip when slotBeforeGroupId is set —
+          // the card is snapped to a group boundary, not entering the group.
           handleMoveToGroup(ds.sourceKey, targetGroupId, displayOrderRef.current);
         } else if (ds.exitingGroup) {
           // Cursor left the source group boundary → move card out of the group

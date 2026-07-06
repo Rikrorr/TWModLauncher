@@ -1,10 +1,8 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Fuse from "fuse.js";
-import { writeModSettings } from "../../lib/tauriApi";
 import { useModStore } from "../../store/useModStore";
 import { useAppStore } from "../../store/useAppStore";
 import type { ModInfo, ModGroup } from "../../lib/types";
-import { collectModSettingsData, patchModSettingsLua, generateModSettingsLua } from "../../utils/generateModSettings";
 import ModCard from "./ModCard";
 import ModFilterBar from "./ModFilterBar";
 import ModGroupHeader from "./ModGroupHeader";
@@ -26,7 +24,7 @@ import {
 } from "./utils";
 
 interface Props {
-  gamePath: string;
+  saving: boolean;
   onSelectMod: (key: string) => void;
 }
 
@@ -53,7 +51,7 @@ function findAnchorAfterCard(
   return undefined;
 }
 
-export default function ModList({ gamePath, onSelectMod }: Props) {
+export default function ModList({ saving, onSelectMod }: Props) {
   // ── Store ────────────────────────────────────────────────────────────────
   const mods = useModStore((s) => s.mods);
   const scanning = useModStore((s) => s.scanning);
@@ -61,12 +59,11 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
   const toggleMod = useModStore((s) => s.toggleMod);
   const setModOrder = useModStore((s) => s.setModOrder);
   const setLastMessage = useAppStore((s) => s.setLastMessage);
-  const templateRaw = useAppStore((s) => s.templateRaw);
+  const setDirty = useAppStore((s) => s.setDirty);
   const groups = useAppStore((s) => s.groups);
   const setGroups = useAppStore((s) => s.setGroups);
   const groupOrder = useAppStore((s) => s.groupOrder);
   const setGroupOrder = useAppStore((s) => s.setGroupOrder);
-  const [saving, setSaving] = useState(false);
 
   // ── Filter / search state ────────────────────────────────────────────────
   const filter = useModListState(mods);
@@ -297,26 +294,12 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
     if (changed) setGroupOrder(filtered);
   }, [groups, groupOrder, setGroupOrder]);
 
-  // ── Save settings ────────────────────────────────────────────────────────
-  const saveModSettings = useCallback(async () => {
-    const data = collectModSettingsData(useModStore.getState().mods);
-    const lua = templateRaw ? patchModSettingsLua(templateRaw, data) : generateModSettingsLua(data);
-    setSaving(true);
-    try {
-      await writeModSettings(gamePath, lua);
-    } catch (e) {
-      setLastMessage(`保存失败: ${String(e)}`);
-    } finally {
-      setSaving(false);
-    }
-  }, [gamePath, setLastMessage, templateRaw]);
-
   const handleOrderChange = useCallback(
     (key: string, order: number) => {
       setModOrder(key, order);
-      saveModSettings();
+      setDirty(true);
     },
-    [setModOrder, saveModSettings],
+    [setModOrder, setDirty],
   );
 
   const handleApplyOrder = useCallback(() => {
@@ -360,9 +343,9 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
     }
 
     for (const [key, order] of updates) setModOrder(key, order);
-    saveModSettings();
+    setDirty(true);
     setLastMessage(`已应用加载顺序 — ${updates.length} 个已启用 Mod 从 0 递增`);
-  }, [filter.displayOrder, groups, modGroupMap, setModOrder, saveModSettings, setLastMessage]);
+  }, [filter.displayOrder, groups, modGroupMap, setModOrder, setDirty, setLastMessage]);
 
   // ── Drag refs (shared across all drag systems) ────────────────────────────
   const dragRefs: DragRefs = useMemo(() => createDragRefs(), []);
@@ -408,22 +391,11 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
 
   // ── Toggle handler ───────────────────────────────────────────────────────
   const handleToggle = useCallback(
-    async (fileId: number, enabled: boolean) => {
+    (fileId: number, enabled: boolean) => {
       toggleMod(fileId, enabled);
-      const updatedMods = useModStore.getState().mods;
-      const data = collectModSettingsData(updatedMods);
-      const lua = templateRaw ? patchModSettingsLua(templateRaw, data) : generateModSettingsLua(data);
-      setSaving(true);
-      try {
-        await writeModSettings(gamePath, lua);
-      } catch (e) {
-        toggleMod(fileId, !enabled);
-        setLastMessage(`保存失败: ${String(e)}`);
-      } finally {
-        setSaving(false);
-      }
+      setDirty(true);
     },
-    [gamePath, toggleMod, setLastMessage, templateRaw],
+    [toggleMod, setDirty],
   );
 
   // ── Filtered mods ────────────────────────────────────────────────────────
@@ -658,12 +630,12 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
                       onOrderUp={(e) => {
                         e.stopPropagation();
                         setModOrder(item.key, mod.order + 1);
-                        saveModSettings();
+                        setDirty(true);
                       }}
                       onOrderDown={(e) => {
                         e.stopPropagation();
                         setModOrder(item.key, Math.max(0, mod.order - 1));
-                        saveModSettings();
+                        setDirty(true);
                       }}
                       onOrderChange={(order) => handleOrderChange(item.key, order)}
                       onDragMouseDown={handleDragMouseDown}
@@ -710,16 +682,16 @@ export default function ModList({ gamePath, onSelectMod }: Props) {
             groups={groups}
             currentGroupId={modGroupMap.get(contextMenu.key)}
             onClose={() => setContextMenu(null)}
-            onToggle={toggleMod}
+            onToggle={handleToggle}
             onSendToGroup={handleSendToGroup}
             onCreateGroupAndSend={handleCreateGroupAndSend}
             onOrderUp={() => {
               setModOrder(contextMenu.key, Math.max(0, mod.order - 1));
-              saveModSettings();
+              setDirty(true);
             }}
             onOrderDown={() => {
               setModOrder(contextMenu.key, mod.order + 1);
-              saveModSettings();
+              setDirty(true);
             }}
             onOpenInExplorer={() => openInExplorer(mod.dirPath).catch(() => {})}
             onOpenWorkshop={() => openSteamWorkshop(mod.fileId).catch(() => {})}

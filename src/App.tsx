@@ -1,5 +1,5 @@
 import { createLogger } from "./lib/logger";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -35,6 +35,8 @@ function App() {
   const lastMessage = useAppStore((s) => s.lastMessage);
   const setLastMessage = useAppStore((s) => s.setLastMessage);
   const templateRaw = useAppStore((s) => s.templateRaw);
+  const isDirty = useAppStore((s) => s.isDirty);
+  const setDirty = useAppStore((s) => s.setDirty);
 
   const clearMods = useModStore((s) => s.clearMods);
   const selectedModKey = useModStore((s) => s.selectedModKey);
@@ -49,6 +51,7 @@ function App() {
   const [hoverKill, setHoverKill] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-load cached game path on startup
@@ -83,12 +86,13 @@ function App() {
   useEffect(() => {
     if (gamePath) {
       scan(gamePath).then(() => {
+        setDirty(false);
         const count = useModStore.getState().mods.length;
         const enabled = useModStore.getState().mods.filter((m) => m.enabled).length;
         setLastMessage(`已加载 ${count} 个 Mod（${enabled} 个已启用）`);
       });
     }
-  }, [gamePath, scan, setLastMessage]);
+  }, [gamePath, scan, setLastMessage, setDirty]);
 
   // Listen for game-exited events from Rust backend (no polling needed)
   useEffect(() => {
@@ -103,6 +107,18 @@ function App() {
     return () => {
       p.then((unlisten) => unlisten());
     };
+  }, []);
+
+  // Warn before closing if there are unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (useAppStore.getState().isDirty) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
   }, []);
 
   const handleLaunch = async () => {
@@ -175,6 +191,7 @@ function App() {
   const handleReselect = () => {
     clearMods();
     clearPath();
+    setDirty(false);
   };
 
   const handleRefresh = async () => {
@@ -182,6 +199,7 @@ function App() {
     setRefreshing(true);
     try {
       const { added, removed } = await rescan(gamePath);
+      setDirty(false);
       const parts: string[] = [];
       if (added > 0) parts.push(`${added} 个新增`);
       if (removed > 0) parts.push(`${removed} 个已移除`);
@@ -197,21 +215,26 @@ function App() {
     }
   };
 
-  const handleSaveAll = async () => {
+  const handleSaveAll = useCallback(async () => {
+    if (saving || !gamePath) return;
     const currentMods = useModStore.getState().mods;
     const data = collectModSettingsData(currentMods);
     const lua = templateRaw
       ? patchModSettingsLua(templateRaw, data)
       : generateModSettingsLua(data);
 
+    setSaving(true);
     setLastMessage("保存中...");
     try {
-      await writeModSettings(gamePath!, lua);
+      await writeModSettings(gamePath, lua);
+      setDirty(false);
       setLastMessage("已保存 — 启用状态已同步到 ModSettings.Lua");
     } catch (e) {
       setLastMessage(`保存失败: ${String(e)}`);
+    } finally {
+      setSaving(false);
     }
-  };
+  }, [gamePath, templateRaw, saving, setLastMessage, setDirty]);
 
   const handleProfileLoad = async (data: ProfileData) => {
     // Build lookup for enabled mods and order from profile
@@ -253,10 +276,18 @@ function App() {
         ? patchModSettingsLua(templateRaw, data)
         : generateModSettingsLua(data);
       await writeModSettings(gamePath!, lua);
+      setDirty(false);
     } catch (e) {
       log.error(`写回 ModSettings.Lua 失败: ${String(e)}`);
     }
   };
+
+  const handleSelectMod = useCallback(async (key: string) => {
+    if (useAppStore.getState().isDirty) {
+      await handleSaveAll();
+    }
+    selectMod(key);
+  }, [handleSaveAll, selectMod]);
 
   const selectedMod = selectedModKey
     ? mods.find(
@@ -309,13 +340,26 @@ function App() {
             >
               日志
             </button>
-            <button
-              onClick={handleSaveAll}
-              className="text-xs px-2.5 py-1 border border-slate-600 hover:border-slate-400
-                         text-slate-400 rounded transition-colors cursor-pointer shrink-0"
-            >
-              同步
-            </button>
+            {saving ? (
+              <span className="text-xs px-2.5 py-1 border border-blue-500/50 bg-blue-500/10
+                               text-blue-400 rounded shrink-0">
+                保存中...
+              </span>
+            ) : (
+              <button
+                onClick={handleSaveAll}
+                className={`text-xs px-2.5 py-1 border rounded transition-all cursor-pointer shrink-0 ${
+                  isDirty
+                    ? "border-amber-500 bg-amber-500/20 text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.5)] hover:border-amber-400 hover:bg-amber-500/30"
+                    : "border-slate-600 hover:border-slate-400 text-slate-400"
+                }`}
+              >
+                同步
+              </button>
+            )}
+            {isDirty && !saving && (
+              <span className="text-xs text-amber-400 animate-pulse shrink-0">未保存</span>
+            )}
             {lastMessage && (
               <span className="text-xs text-slate-500 truncate max-w-48 shrink">
                 {lastMessage}
@@ -424,8 +468,8 @@ function App() {
               }`}
             >
               <ModList
-                gamePath={gamePath}
-                onSelectMod={(key) => selectMod(key)}
+                saving={saving}
+                onSelectMod={handleSelectMod}
               />
             </div>
 

@@ -35,6 +35,8 @@ interface AppState {
   groups: ModGroup[];
   /** Visual order of group IDs */
   groupOrder: string[];
+  /** True when in-memory mod state differs from what's on disk */
+  isDirty: boolean;
 
   setGamePath: (path: string, source: "auto" | "manual") => void;
   setDetecting: (v: boolean) => void;
@@ -44,6 +46,7 @@ interface AppState {
   setGroups: (groups: ModGroup[] | ((prev: ModGroup[]) => ModGroup[])) => void;
   setGroupOrder: (order: string[] | ((prev: string[]) => string[])) => void;
   clearPath: () => void;
+  setDirty: (v: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -55,6 +58,7 @@ export const useAppStore = create<AppState>((set) => ({
   templateRaw: "",
   groups: initialGroups.groups,
   groupOrder: initialGroups.groupOrder,
+  isDirty: false,
 
   setGamePath: (path, source) =>
     set({ gamePath: path, pathSource: source, error: null }),
@@ -66,4 +70,5 @@ export const useAppStore = create<AppState>((set) => ({
   setGroupOrder: (groupOrder) => set((state) => ({ groupOrder: typeof groupOrder === "function" ? groupOrder(state.groupOrder) : groupOrder })),
   clearPath: () =>
     set({ gamePath: null, pathSource: "none", error: null }),
+  setDirty: (v) => set({ isDirty: v }),
 }));
