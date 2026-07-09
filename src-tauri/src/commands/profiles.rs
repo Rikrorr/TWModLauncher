@@ -72,7 +72,15 @@ pub fn save_profile(name: String, data: String) -> Result<(), String> {
     // Validate that data is valid JSON
     serde_json::from_str::<serde_json::Value>(&data)
         .map_err(|e| format!("JSON格式错误: {e}"))?;
-    fs::write(&path, &data).map_err(|e| format!("保存失败: {e}"))
+    // Atomic write: write to temp file first, then rename.
+    // On failure the original profile is left intact.
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, &data).map_err(|e| format!("保存失败: {e}"))?;
+    fs::rename(&tmp, &path).map_err(|e| {
+        // Clean up temp file on rename failure
+        let _ = fs::remove_file(&tmp);
+        format!("保存失败: {e}")
+    })
 }
 
 #[tauri::command]

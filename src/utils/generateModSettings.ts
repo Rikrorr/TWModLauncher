@@ -228,3 +228,23 @@ export function generateModSettingsLua(data: ModSettingsData): string {
 
   return result;
 }
+
+// ── Per-mod Settings.Lua generation ──
+
+function luaValue(v: unknown): string {
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (typeof v === "number") return String(v);
+  if (typeof v === "string") return `"${v}"`;
+  return "nil";
+}
+
+/** Generate Settings.Lua text from a values map (per-mod config). */
+export function generateSettingsLua(values: Record<string, unknown>): string {
+  const lines = ["return {"];
+  for (const [k, v] of Object.entries(values)) {
+    lines.push(`\t${k} = ${luaValue(v)},`);
+  }
+  lines.push("}");
+  lines.push(""); // trailing newline
+  return lines.join("\n");
+}

@@ -9,7 +9,7 @@ import {
 } from "../lib/luaParser";
 import { useModStore } from "../store/useModStore";
 import { useAppStore } from "../store/useAppStore";
-import type { ModInfo } from "../lib/types";
+import type { ModInfo, ScanMeta } from "../lib/types";
 import { resolveTagName } from "../utils/tagMapping";
 
 /** Format Unix timestamp (seconds) to readable date */
@@ -30,12 +30,14 @@ function hashStr(s: string): number {
   return Math.abs(hash) || 1;
 }
 
-/** Parse scan result into ModInfo list */
+/** Parse scan result into ModInfo list, counting failed entries */
 function parseScanResult(
-  result: { entries: { file_id: string; source: number; dir_path: string; cover_path: string; cover_data: string; config_raw: string; settings_raw: string; modified_at: string }[]; mod_settings_raw: string },
+  result: { entries: { file_id: string; source: number; dir_path: string; cover_path: string; cover_data: string; config_raw: string; settings_raw: string; modified_at: string }[]; mod_settings_raw: string; warnings: string[] },
   ms: ParsedModSettings,
-): ModInfo[] {
+): { mods: ModInfo[]; failedCount: number; failedModNames: string[] } {
   const mods: ModInfo[] = [];
+  let failedCount = 0;
+  const failedModNames: string[] = [];
   for (const entry of result.entries) {
     try {
       const config = parseConfigLua(entry.config_raw);
@@ -48,6 +50,11 @@ function parseScanResult(
           ? ms.enabledWorkshopMods.includes(prefixedId)
           : ms.enabledLocalMods.includes(prefixedId);
       const isResidual = config.parseError || !entry.config_raw.trim();
+
+      if (config.parseError) {
+        failedCount++;
+        failedModNames.push(config.title || entry.file_id);
+      }
 
       mods.push({
         fileId,
@@ -76,6 +83,8 @@ function parseScanResult(
       });
     } catch (e) {
       log.error(`Failed to parse entry ${entry.file_id}: ${String(e)}`);
+      failedCount++;
+      failedModNames.push(entry.file_id);
       mods.push({
         fileId: Number(entry.file_id) || hashStr(entry.file_id),
         title: `Mod #${entry.file_id} (解析失败)`,
@@ -101,7 +110,7 @@ function parseScanResult(
       });
     }
   }
-  return mods;
+  return { mods, failedCount, failedModNames };
 }
 
 const log = createLogger("useModScanner");
@@ -113,21 +122,31 @@ export function useModScanner() {
   const setTemplateRaw = useAppStore((s) => s.setTemplateRaw);
 
   const scan = useCallback(
-    async (gamePath: string) => {
+    async (gamePath: string): Promise<ScanMeta | null> => {
       setScanning(true);
       setError(null);
       try {
         const result = await scanMods(gamePath);
         log.debug(`got ${result.entries.length} entries, modSettings raw length: ${result.mod_settings_raw.length}`);
 
-        let ms = parseModSettingsSafe(result.mod_settings_raw);
-        const mods = parseScanResult(result, ms);
+        const msParsed = parseModSettingsSafe(result.mod_settings_raw);
+        const { mods, failedCount, failedModNames } = parseScanResult(result, msParsed.result);
 
         setMods(mods);
         setTemplateRaw(result.mod_settings_raw);
+
+        return {
+          total: mods.length,
+          enabled: mods.filter((m) => m.enabled).length,
+          failedCount,
+          msParseFailed: msParsed.failed,
+          warnings: result.warnings,
+          failedModNames,
+        };
       } catch (e) {
         log.error(`Fatal: ${String(e)}`);
         setError(`扫描失败: ${String(e)}`);
+        return null;
       } finally {
         setScanning(false);
       }
@@ -136,14 +155,14 @@ export function useModScanner() {
   );
 
   /** Re-scan directories and merge changes into the existing list.
-   *  Returns counts of added and removed mods. */
+   *  Returns counts of added and removed mods plus metadata. */
   const rescan = useCallback(
-    async (gamePath: string): Promise<{ added: number; removed: number }> => {
+    async (gamePath: string): Promise<{ added: number; removed: number; failedCount: number; msParseFailed: boolean; warnings: string[]; failedModNames: string[] } | null> => {
       setScanning(true);
       try {
         const result = await scanMods(gamePath);
-        let ms = parseModSettingsSafe(result.mod_settings_raw);
-        const freshMods = parseScanResult(result, ms);
+        const msParsed = parseModSettingsSafe(result.mod_settings_raw);
+        const { mods: freshMods, failedCount, failedModNames } = parseScanResult(result, msParsed.result);
 
         // Update templateRaw so future saves use latest ModSettings.Lua
         setTemplateRaw(result.mod_settings_raw);
@@ -182,10 +201,17 @@ export function useModScanner() {
           setMods(merged);
         }
 
-        return { added: added.length, removed: removed.length };
+        return {
+          added: added.length,
+          removed: removed.length,
+          failedCount,
+          msParseFailed: msParsed.failed,
+          warnings: result.warnings,
+          failedModNames,
+        };
       } catch (e) {
-        log.error(`Fatal: ${String(e)}`);
-        return { added: 0, removed: 0 };
+        log.error(`Fatal rescan: ${String(e)}`);
+        return null;
       } finally {
         setScanning(false);
       }
@@ -196,11 +222,11 @@ export function useModScanner() {
   return { scan, rescan };
 }
 
-function parseModSettingsSafe(raw: string): ParsedModSettings {
+function parseModSettingsSafe(raw: string): { result: ParsedModSettings; failed: boolean } {
   try {
-    return parseModSettingsLua(raw);
+    return { result: parseModSettingsLua(raw), failed: false };
   } catch (e) {
     log.error(`ModSettings parse failed: ${String(e)}`);
-    return { enabledWorkshopMods: [], enabledLocalMods: [], modOrder: {} };
+    return { result: { enabledWorkshopMods: [], enabledLocalMods: [], modOrder: {} }, failed: true };
   }
 }

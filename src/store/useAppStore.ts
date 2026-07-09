@@ -37,6 +37,8 @@ interface AppState {
   groupOrder: string[];
   /** True when in-memory mod state differs from what's on disk */
   isDirty: boolean;
+  /** Mod keys with unsaved per-mod Settings.Lua changes */
+  dirtyModSettings: string[];
 
   setGamePath: (path: string, source: "auto" | "manual") => void;
   setDetecting: (v: boolean) => void;
@@ -47,6 +49,9 @@ interface AppState {
   setGroupOrder: (order: string[] | ((prev: string[]) => string[])) => void;
   clearPath: () => void;
   setDirty: (v: boolean) => void;
+  addDirtyModSetting: (key: string) => void;
+  clearDirtyModSettings: () => void;
+  removeDirtyModSettings: (keys: string[]) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -59,6 +64,7 @@ export const useAppStore = create<AppState>((set) => ({
   groups: initialGroups.groups,
   groupOrder: initialGroups.groupOrder,
   isDirty: false,
+  dirtyModSettings: [],
 
   setGamePath: (path, source) =>
     set({ gamePath: path, pathSource: source, error: null }),
@@ -69,6 +75,17 @@ export const useAppStore = create<AppState>((set) => ({
   setGroups: (groups) => set((state) => ({ groups: typeof groups === "function" ? groups(state.groups) : groups })),
   setGroupOrder: (groupOrder) => set((state) => ({ groupOrder: typeof groupOrder === "function" ? groupOrder(state.groupOrder) : groupOrder })),
   clearPath: () =>
-    set({ gamePath: null, pathSource: "none", error: null }),
+    set({ gamePath: null, pathSource: "none", error: null, dirtyModSettings: [] }),
   setDirty: (v) => set({ isDirty: v }),
+  addDirtyModSetting: (key) =>
+    set((s) => ({
+      dirtyModSettings: s.dirtyModSettings.includes(key)
+        ? s.dirtyModSettings
+        : [...s.dirtyModSettings, key],
+    })),
+  clearDirtyModSettings: () => set({ dirtyModSettings: [] }),
+  removeDirtyModSettings: (keys) =>
+    set((s) => ({
+      dirtyModSettings: s.dirtyModSettings.filter((k) => !keys.includes(k)),
+    })),
 }));

@@ -60,11 +60,15 @@ export default function ModGroupHeader({
         <input
           autoFocus
           defaultValue={group.name}
-          onBlur={onStopEdit}
+          onBlur={(e) => {
+            const val = (e.target as HTMLInputElement).value.trim();
+            onRename(group.id, val || "未命名分组");
+            onStopEdit();
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               const val = (e.target as HTMLInputElement).value.trim();
-              if (val) onRename(group.id, val);
+              onRename(group.id, val || "未命名分组");
               onStopEdit();
             } else if (e.key === "Escape") {
               onStopEdit();
@@ -83,7 +87,7 @@ export default function ModGroupHeader({
             onStartEdit(group.id);
           }}
         >
-          {group.name}
+          {group.name || "未命名分组"}
         </span>
       )}
 

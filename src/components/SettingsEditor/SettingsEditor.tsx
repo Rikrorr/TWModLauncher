@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useState } from "react";
-import { writeSettingsFile } from "../../lib/tauriApi";
 import type { ModInfo } from "../../lib/types";
 import SettingField from "./SettingField";
 
@@ -9,31 +8,10 @@ interface Props {
   onSettingsSaved: (settings: Record<string, unknown>) => void;
 }
 
-/** Generate Settings.Lua text from a values map */
-function generateSettingsLua(values: Record<string, unknown>): string {
-  const lines = ["return {"];
-  for (const [k, v] of Object.entries(values)) {
-    lines.push(`\t${k} = ${luaValue(v)},`);
-  }
-  lines.push("}");
-  lines.push(""); // trailing newline
-  return lines.join("\n");
-}
-
-function luaValue(v: unknown): string {
-  if (typeof v === "boolean") return v ? "true" : "false";
-  if (typeof v === "number") return String(v);
-  if (typeof v === "string") return `"${v}"`;
-  return "nil";
-}
-
 export default function SettingsEditor({ mod, onClose, onSettingsSaved }: Props) {
-  // Local mutable copy of current settings
   const [values, setValues] = useState<Record<string, unknown>>(() => ({
     ...mod.currentSettings,
   }));
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [activeGroup, setActiveGroup] = useState<string>("");
 
   // Build group list from settings definitions
@@ -47,7 +25,6 @@ export default function SettingsEditor({ mod, onClose, onSettingsSaved }: Props)
         result.push(g);
       }
     }
-    // Default to first group
     if (result.length > 0 && !activeGroup) {
       setActiveGroup(result[0]);
     }
@@ -62,33 +39,18 @@ export default function SettingsEditor({ mod, onClose, onSettingsSaved }: Props)
     [mod.defaultSettings, activeGroup],
   );
 
-  const handleChange = useCallback((key: string, newValue: unknown) => {
-    setValues((prev) => ({ ...prev, [key]: newValue }));
-    setSaveError(null);
-  }, []);
-
-  const handleSave = useCallback(async () => {
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const raw = generateSettingsLua(values);
-      await writeSettingsFile(mod.dirPath, raw);
-      // Sync saved values back to Zustand so re-opening shows current state
-      onSettingsSaved(values);
-    } catch (e) {
-      setSaveError(`保存失败: ${String(e)}`);
-    } finally {
-      setSaving(false);
-    }
-  }, [values, mod.dirPath, onSettingsSaved]);
-
-  const changedCount = useMemo(() => {
-    let count = 0;
-    for (const [k, v] of Object.entries(values)) {
-      if (mod.currentSettings[k] !== v) count++;
-    }
-    return count;
-  }, [values, mod.currentSettings]);
+  // Each change immediately commits to Zustand so the main toolbar
+  // always sees the full dirty state across all mods + mod-list changes.
+  const handleChange = useCallback(
+    (key: string, newValue: unknown) => {
+      setValues((prev) => {
+        const next = { ...prev, [key]: newValue };
+        onSettingsSaved(next);
+        return next;
+      });
+    },
+    [onSettingsSaved],
+  );
 
   return (
     <div className="flex flex-col h-full bg-slate-900">
@@ -98,23 +60,11 @@ export default function SettingsEditor({ mod, onClose, onSettingsSaved }: Props)
           <h2 className="text-sm font-semibold text-slate-100 truncate">
             {mod.title}
           </h2>
-          <p className="text-xs text-slate-500 truncate">{mod.author}</p>
+          <p className="text-xs text-slate-500 truncate">
+            {mod.author}
+          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-3">
-          {changedCount > 0 && (
-            <span className="text-xs text-amber-400">
-              {changedCount} 项已修改
-            </span>
-          )}
-          <button
-            onClick={handleSave}
-            disabled={saving || changedCount === 0}
-            className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700
-                       text-white rounded font-medium transition-colors cursor-pointer
-                       disabled:cursor-not-allowed disabled:text-slate-500"
-          >
-            {saving ? "保存中..." : "保存"}
-          </button>
           <button
             onClick={onClose}
             className="px-3 py-1 text-xs border border-slate-600 hover:border-slate-400
@@ -125,15 +75,8 @@ export default function SettingsEditor({ mod, onClose, onSettingsSaved }: Props)
         </div>
       </div>
 
-      {saveError && (
-        <div className="px-5 py-2 bg-red-900/40 border-b border-red-800 text-xs text-red-300">
-          {saveError}
-        </div>
-      )}
-
       {/* Body: group nav + settings */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Group navigation */}
         <nav className="w-36 shrink-0 overflow-y-auto border-r border-slate-700 bg-slate-800/50 py-2">
           {groups.map((g) => (
             <button
@@ -150,7 +93,6 @@ export default function SettingsEditor({ mod, onClose, onSettingsSaved }: Props)
           ))}
         </nav>
 
-        {/* Settings panel */}
         <div className="flex-1 overflow-y-auto px-5 py-3">
           {filteredSettings.length === 0 ? (
             <p className="text-sm text-slate-500 py-4">此分组暂无设置项</p>

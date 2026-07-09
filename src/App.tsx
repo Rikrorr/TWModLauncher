@@ -1,7 +1,7 @@
-import { createLogger } from "./lib/logger";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, ask } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   validateGamePath,
   launchGame,
@@ -9,11 +9,12 @@ import {
   checkGameRunning,
   killGame,
   writeModSettings,
+  writeSettingsFile,
   loadConfig,
   saveConfig,
   openLogDir,
 } from "./lib/tauriApi";
-import { collectModSettingsData, patchModSettingsLua, generateModSettingsLua } from "./utils/generateModSettings";
+import { collectModSettingsData, patchModSettingsLua, generateModSettingsLua, generateSettingsLua } from "./utils/generateModSettings";
 import { useAppStore } from "./store/useAppStore";
 import { useModStore } from "./store/useModStore";
 import { useModScanner } from "./hooks/useModScanner";
@@ -21,8 +22,6 @@ import type { ProfileData } from "./lib/types";
 import ModList from "./components/ModList/ModList";
 import SettingsEditor from "./components/SettingsEditor/SettingsEditor";
 import ProfileManager from "./components/ProfileManager/ProfileManager";
-
-const log = createLogger("App");
 
 function App() {
   const gamePath = useAppStore((s) => s.gamePath);
@@ -37,6 +36,7 @@ function App() {
   const templateRaw = useAppStore((s) => s.templateRaw);
   const isDirty = useAppStore((s) => s.isDirty);
   const setDirty = useAppStore((s) => s.setDirty);
+  const addDirtyModSetting = useAppStore((s) => s.addDirtyModSetting);
 
   const clearMods = useModStore((s) => s.clearMods);
   const selectedModKey = useModStore((s) => s.selectedModKey);
@@ -65,6 +65,8 @@ function App() {
           const result = await validateGamePath(cfg.gamePath);
           if (result.path) {
             setGamePath(result.path, "auto");
+          } else {
+            setLastMessage("缓存的游戏路径已失效，请重新选择游戏目录");
           }
         }
       } catch {
@@ -73,7 +75,7 @@ function App() {
         setConfigLoaded(true);
       }
     })();
-  }, [setGamePath]);
+  }, [setGamePath, setLastMessage]);
 
   // Auto-save config when game path changes (only after initial load)
   useEffect(() => {
@@ -85,11 +87,22 @@ function App() {
   // Auto-scan mods when game path is confirmed
   useEffect(() => {
     if (gamePath) {
-      scan(gamePath).then(() => {
+      scan(gamePath).then((meta) => {
+        if (!meta) return;
         setDirty(false);
-        const count = useModStore.getState().mods.length;
-        const enabled = useModStore.getState().mods.filter((m) => m.enabled).length;
-        setLastMessage(`已加载 ${count} 个 Mod（${enabled} 个已启用）`);
+        const parts = [`已加载 ${meta.total} 个 Mod（${meta.enabled} 个已启用）`];
+        if (meta.failedCount > 0) {
+          const names = meta.failedModNames.slice(0, 3).join("、");
+          const suffix = meta.failedModNames.length > 3 ? `等${meta.failedModNames.length}个` : "";
+          parts.push(`${meta.failedCount} 个解析失败（${names}${suffix}）`);
+        }
+        if (meta.msParseFailed) {
+          parts.push("ModSettings.Lua 解析失败，启用状态可能不准确");
+        }
+        if (meta.warnings.length > 0) {
+          parts.push(...meta.warnings);
+        }
+        setLastMessage(parts.join("，"));
       });
     }
   }, [gamePath, scan, setLastMessage, setDirty]);
@@ -104,21 +117,36 @@ function App() {
     const p = listen("game-exited", () => {
       setGameRunning(false);
     });
+    const p2 = listen<string>("game-launch-failed", (event) => {
+      setGameRunning(false);
+      setLaunchError(event.payload);
+    });
     return () => {
       p.then((unlisten) => unlisten());
+      p2.then((unlisten) => unlisten());
     };
   }, []);
 
   // Warn before closing if there are unsaved changes
   useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
+    let unlisten: (() => void) | undefined;
+    let closing = false; // guard against destroy() re-triggering onCloseRequested
+    getCurrentWindow().onCloseRequested(async (event) => {
+      if (closing) return;
       if (useAppStore.getState().isDirty) {
-        e.preventDefault();
-        e.returnValue = "";
+        event.preventDefault();
+        const confirmed = await ask(
+          "有未保存的更改，确定要退出程序吗？",
+          { title: "未保存的更改", kind: "warning" },
+        );
+        if (confirmed) {
+          closing = true;
+          useAppStore.getState().setDirty(false);
+          await getCurrentWindow().destroy();
+        }
       }
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
   }, []);
 
   const handleLaunch = async () => {
@@ -182,13 +210,29 @@ function App() {
         );
       }
     } catch (e) {
-      setError(`验证失败: ${String(e)}`);
+      const msg = String(e);
+      if (msg.includes("PERMISSION_DENIED")) {
+        setError("所选目录无读取权限，请选择其他目录或检查权限设置。");
+      } else if (msg.includes("PATH_NOT_FOUND")) {
+        setError("所选目录不可用，可能磁盘已断开或目录已删除，请重新选择。");
+      } else if (msg.includes("NOT_A_DIRECTORY")) {
+        setError("所选路径不是有效的目录，请重新选择。");
+      } else {
+        setError(`验证失败: ${msg}`);
+      }
     } finally {
       setDetecting(false);
     }
   };
 
-  const handleReselect = () => {
+  const handleReselect = async () => {
+    if (useAppStore.getState().isDirty) {
+      const confirmed = await ask(
+        "有未保存的更改，确定要放弃并重新选择游戏目录吗？",
+        { title: "未保存的更改", kind: "warning" },
+      );
+      if (!confirmed) return;
+    }
     clearMods();
     clearPath();
     setDirty(false);
@@ -196,23 +240,65 @@ function App() {
 
   const handleRefresh = async () => {
     if (!gamePath || refreshing) return;
-    setRefreshing(true);
-    try {
-      const { added, removed } = await rescan(gamePath);
-      setDirty(false);
-      const parts: string[] = [];
-      if (added > 0) parts.push(`${added} 个新增`);
-      if (removed > 0) parts.push(`${removed} 个已移除`);
-      if (parts.length > 0) {
-        setLastMessage(`发现 ${parts.join("，")}`);
-      } else {
-        setLastMessage("Mod 列表已是最新");
-      }
-    } catch {
-      setLastMessage("刷新失败");
-    } finally {
-      setRefreshing(false);
+
+    // Warn if there are unsaved changes
+    if (useAppStore.getState().isDirty) {
+      const confirmed = await ask(
+        "刷新将丢弃未保存的更改，确定继续吗？",
+        { title: "未保存的更改", kind: "warning" },
+      );
+      if (!confirmed) return;
     }
+
+    setRefreshing(true);
+    const result = await rescan(gamePath);
+
+    if (!result) {
+      // Fatal error — likely path is invalid
+      setRefreshing(false);
+      setLastMessage("刷新失败，请检查游戏目录是否可用");
+      try {
+        await validateGamePath(gamePath);
+        // Path is still valid but scan failed — don't redirect
+      } catch {
+        clearMods();
+        clearPath();
+        setDirty(false);
+        setLastMessage("游戏目录不可用，请重新选择");
+      }
+      return;
+    }
+
+    const { added, removed, failedCount, msParseFailed, warnings, failedModNames } = result;
+    setDirty(false);
+    const parts: string[] = [];
+    if (added > 0) parts.push(`${added} 个新增`);
+    if (removed > 0) parts.push(`${removed} 个已移除`);
+    if (parts.length === 0) parts.push("Mod 列表已是最新");
+    if (failedCount > 0) {
+      const names = failedModNames.slice(0, 3).join("、");
+      const suffix = failedModNames.length > 3 ? `等${failedModNames.length}个` : "";
+      parts.push(`${failedCount} 个解析失败（${names}${suffix}）`);
+    }
+    if (msParseFailed) parts.push("ModSettings.Lua 解析失败");
+    if (warnings.length > 0) parts.push(...warnings);
+    setLastMessage(parts.join("，"));
+
+    // If all known mods vanished, validate that the game directory still exists
+    if (removed > 0 && useModStore.getState().mods.length === 0) {
+      try {
+        await validateGamePath(gamePath);
+      } catch {
+        clearMods();
+        clearPath();
+        setDirty(false);
+        setLastMessage("游戏目录不可用，所有 Mod 已移除，请重新选择");
+        setRefreshing(false);
+        return;
+      }
+    }
+
+    setRefreshing(false);
   };
 
   const handleSaveAll = useCallback(async () => {
@@ -227,8 +313,38 @@ function App() {
     setLastMessage("保存中...");
     try {
       await writeModSettings(gamePath, lua);
+
+      // Write per-mod Settings.Lua for mods with unsaved config changes
+      const dirtyKeys = useAppStore.getState().dirtyModSettings;
+      let perModMsg = "";
+      if (dirtyKeys.length > 0) {
+        const allMods = useModStore.getState().mods;
+        const failedMods: string[] = [];
+        const succeededKeys: string[] = [];
+        for (const key of dirtyKeys) {
+          const mod = allMods.find((m) => `${m.source}_${m.fileId}` === key);
+          if (mod && mod.dirPath) {
+            try {
+              const raw = generateSettingsLua(mod.currentSettings);
+              await writeSettingsFile(mod.dirPath, raw);
+              succeededKeys.push(key);
+            } catch (e) {
+              failedMods.push(mod.title);
+            }
+          }
+        }
+        if (succeededKeys.length > 0) {
+          useAppStore.getState().removeDirtyModSettings(succeededKeys);
+        }
+        if (failedMods.length > 0) {
+          const names = failedMods.slice(0, 3).join("、");
+          const suffix = failedMods.length > 3 ? `等${failedMods.length}个` : "";
+          perModMsg = `，但 ${names}${suffix} 配置保存失败`;
+        }
+      }
+
       setDirty(false);
-      setLastMessage("已保存 — 启用状态已同步到 ModSettings.Lua");
+      setLastMessage(`已保存 — 启用状态已同步到 ModSettings.Lua${perModMsg}`);
     } catch (e) {
       setLastMessage(`保存失败: ${String(e)}`);
     } finally {
@@ -267,19 +383,15 @@ function App() {
       if (data.groupOrder) useAppStore.getState().setGroupOrder(data.groupOrder);
     }
 
-    setLastMessage(`方案 "${data.name}" 已加载（${data.enabledMods.length} 个已启用）`);
+    setLastMessage(`方案 "${data.name}" 已加载（${data.enabledMods.length} 个已启用），请点击同步保存`);
 
-    // Write back to ModSettings.Lua
-    try {
-      const data = collectModSettingsData(updated);
-      const lua = templateRaw
-        ? patchModSettingsLua(templateRaw, data)
-        : generateModSettingsLua(data);
-      await writeModSettings(gamePath!, lua);
-      setDirty(false);
-    } catch (e) {
-      log.error(`写回 ModSettings.Lua 失败: ${String(e)}`);
+    // Mark dirty so user knows to sync — also track per-mod settings that changed
+    if (settingsMap && Object.keys(settingsMap).length > 0) {
+      for (const key of Object.keys(settingsMap)) {
+        useAppStore.getState().addDirtyModSetting(key);
+      }
     }
+    useAppStore.getState().setDirty(true);
   };
 
   const handleSelectMod = useCallback(async (key: string) => {
@@ -479,9 +591,11 @@ function App() {
                 <SettingsEditor
                   mod={selectedMod}
                   onClose={() => selectMod(null)}
-                  onSettingsSaved={(settings) =>
-                    updateModSettings(selectedModKey!, settings)
-                  }
+                  onSettingsSaved={(settings) => {
+                    updateModSettings(selectedModKey!, settings);
+                    addDirtyModSetting(selectedModKey!);
+                    setDirty(true);
+                  }}
                 />
               </div>
             )}

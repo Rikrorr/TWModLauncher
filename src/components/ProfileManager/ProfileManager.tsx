@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { save, open as openDialog } from "@tauri-apps/plugin-dialog";
+import { save, open as openDialog, ask } from "@tauri-apps/plugin-dialog";
 import {
   listProfiles,
   saveProfile,
@@ -76,8 +76,15 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
   };
 
   const handleSave = async (forceOverwrite = false) => {
-    const name = saveName.trim();
-    if (!name) return;
+    let name = saveName.trim();
+    if (!name) {
+      // Generate default name that doesn't conflict
+      const base = "新建方案";
+      name = base;
+      for (let i = 2; profiles.some((p) => p.name === name); i++) {
+        name = `${base} ${i}`;
+      }
+    }
 
     if (!forceOverwrite) {
       const existing = profiles.find((p) => p.name === name);
@@ -135,7 +142,14 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
   const handleLoad = async (name: string) => {
     try {
       const raw = await loadProfile(name);
-      const data = JSON.parse(raw) as ProfileData;
+
+      let data: ProfileData;
+      try {
+        data = JSON.parse(raw) as ProfileData;
+      } catch {
+        flash("方案文件已损坏，无法加载");
+        return;
+      }
 
       const missing = detectMissingMods(data, mods);
       if (missing.size > 0) {
@@ -154,6 +168,11 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
   };
 
   const handleDelete = async (name: string) => {
+    const confirmed = await ask(
+      `确定要删除方案 "${name}" 吗？此操作不可撤销。`,
+      { title: "确认删除", kind: "warning" },
+    );
+    if (!confirmed) return;
     try {
       await deleteProfile(name);
       flash(`方案 "${name}" 已删除`);
@@ -187,13 +206,39 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
       if (!selected) return;
       const path = selected as string;
       const raw = await readFile(path);
-      const data = JSON.parse(raw) as ProfileData;
+
+      let data: ProfileData;
+      try {
+        data = JSON.parse(raw) as ProfileData;
+      } catch {
+        flash("导入失败: 文件格式无效，请确认选择的是 JSON 方案文件");
+        return;
+      }
+
       if (!data.name || !Array.isArray(data.enabledMods)) {
         flash("导入失败: 无效的方案文件");
         return;
       }
 
-      // Save to local store first
+      // Version compatibility check
+      if (data.version !== undefined && data.version > 1) {
+        flash(
+          `导入失败: 方案版本不兼容（文件版本 ${data.version}，当前支持版本 1）`,
+        );
+        return;
+      }
+
+      // Check for overwrite
+      const existing = profiles.find((p) => p.name === data.name);
+      if (existing) {
+        const confirmed = await ask(
+          `方案 "${data.name}" 已存在，是否覆盖？`,
+          { title: "确认覆盖", kind: "warning" },
+        );
+        if (!confirmed) return;
+      }
+
+      // Save to local store
       await saveProfile(data.name, JSON.stringify(data, null, 2));
       refresh();
 
@@ -299,9 +344,8 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
                 {!confirmOverwriteName && (
                   <button
                     onClick={() => handleSave()}
-                    disabled={!saveName.trim()}
                     className="text-xs px-2 py-0.5 bg-green-600 hover:bg-green-500
-                               disabled:bg-green-800 text-white rounded cursor-pointer"
+                               text-white rounded cursor-pointer"
                   >
                     新建
                   </button>

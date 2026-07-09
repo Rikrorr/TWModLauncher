@@ -97,7 +97,7 @@ fn start_steam_monitor(app_handle: tauri::AppHandle) {
             thread::sleep(Duration::from_secs(2));
         }
         // Game never started or already exited
-        let _ = app_handle.emit("game-exited", ());
+        let _ = app_handle.emit("game-launch-failed", "Steam 启动超时，游戏进程未检测到");
     });
 }
 
@@ -123,19 +123,19 @@ pub fn launch_game(
         *guard = Some(child);
     }
 
-    // Wait for the launcher to spawn the real game process, then capture its PID.
-    thread::sleep(Duration::from_millis(3000));
-
-    if let Some(pid) = find_game_pid() {
-        let mut guard = state.pid.lock().map_err(|_| "内部状态错误".to_string())?;
-        *guard = Some(pid);
-        start_pid_monitor(app_handle, pid);
-    } else {
-        // Game failed to start — notify frontend
-        let _ = app_handle.emit("game-exited", ());
+    // Retry PID discovery — the launcher may take a few seconds to spawn the game process
+    for _ in 0..5 {
+        thread::sleep(Duration::from_secs(2));
+        if let Some(pid) = find_game_pid() {
+            let mut guard = state.pid.lock().map_err(|_| "内部状态错误".to_string())?;
+            *guard = Some(pid);
+            start_pid_monitor(app_handle, pid);
+            return Ok(());
+        }
     }
 
-    Ok(())
+    // Game process never appeared
+    Err("游戏进程未启动，可能被杀软拦截".to_string())
 }
 
 /// Quick check if the game process is currently running.
@@ -217,6 +217,10 @@ pub fn launch_game_steam(app_handle: tauri::AppHandle) -> Result<(), String> {
 /// Open a Steam Workshop item page in the Steam client
 #[tauri::command]
 pub fn open_steam_workshop(file_id: String) -> Result<(), String> {
+    if !steam_installed() {
+        return Err("未检测到 Steam 客户端".to_string());
+    }
+
     bg_cmd("cmd")
         .args([
             "/C",

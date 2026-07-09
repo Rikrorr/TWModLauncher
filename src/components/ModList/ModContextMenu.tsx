@@ -115,10 +115,15 @@ export default function ModContextMenu({
       <div
         ref={sendToRef}
         className="relative"
-        onMouseEnter={() => setSendToOpen(true)}
+        onMouseEnter={() => groups.length > 0 && setSendToOpen(true)}
       >
         <button
-          className="w-full text-left px-3 py-1.5 text-sm hover:bg-slate-700/70 transition-colors flex items-center gap-2 text-slate-200"
+          disabled={groups.length === 0}
+          className={`w-full text-left px-3 py-1.5 text-sm transition-colors flex items-center gap-2 ${
+            groups.length === 0
+              ? "text-slate-600 cursor-not-allowed"
+              : "text-slate-200 hover:bg-slate-700/70"
+          }`}
         >
           <span className="flex-1">发送到</span>
           <span className="text-slate-500 text-xs">{"\u25B8"}</span>

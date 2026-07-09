@@ -21,6 +21,10 @@ pub fn read_file(path: String) -> Result<String, String> {
 /// Open the specified folder in the system file explorer.
 #[tauri::command]
 pub fn open_in_explorer(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(format!("目录不存在: {}", path));
+    }
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")

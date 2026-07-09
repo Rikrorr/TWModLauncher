@@ -22,5 +22,11 @@ pub fn save_config(data: String) -> Result<(), String> {
     // Validate JSON before saving
     serde_json::from_str::<serde_json::Value>(&data)
         .map_err(|e| format!("JSON格式错误: {e}"))?;
-    fs::write(&path, &data).map_err(|e| format!("保存失败: {e}"))
+    // Atomic write: write to temp file first, then rename
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, &data).map_err(|e| format!("保存失败: {e}"))?;
+    fs::rename(&tmp, &path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        format!("保存失败: {e}")
+    })
 }

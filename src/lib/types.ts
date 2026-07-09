@@ -20,6 +20,17 @@ export interface ModScanEntry {
 export interface ScanResult {
   entries: ModScanEntry[];
   mod_settings_raw: string;
+  warnings: string[];
+}
+
+/** Metadata returned from scan/rescan for message bar assembly */
+export interface ScanMeta {
+  total: number;
+  enabled: number;
+  failedCount: number;
+  msParseFailed: boolean;
+  warnings: string[];
+  failedModNames: string[];
 }
 
 /** Mod metadata parsed from Config.lua */

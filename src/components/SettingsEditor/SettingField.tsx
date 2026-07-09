@@ -82,7 +82,8 @@ function SliderField({
   max: number;
   step: number;
 }) {
-  const numValue = typeof value === "number" ? value : Number(value) || min;
+  const rawValue = typeof value === "number" ? value : Number(value) || min;
+  const numValue = Math.min(Math.max(rawValue, min), max);
   return (
     <div className="flex items-center gap-2">
       <input
@@ -121,11 +122,17 @@ function DropdownField({
       onChange={(e) => onChange(Number(e.target.value))}
       className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 cursor-pointer focus:outline-none focus:border-blue-500"
     >
-      {entries.map(([k, label]) => (
-        <option key={k} value={k}>
-          {label}
+      {entries.length === 0 ? (
+        <option disabled value="">
+          无可用选项
         </option>
-      ))}
+      ) : (
+        entries.map(([k, label]) => (
+          <option key={k} value={k}>
+            {label}
+          </option>
+        ))
+      )}
     </select>
   );
 }

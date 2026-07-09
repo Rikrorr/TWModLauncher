@@ -8,6 +8,7 @@ import ModFilterBar from "./ModFilterBar";
 import ModGroupHeader from "./ModGroupHeader";
 import ModContextMenu from "./ModContextMenu";
 import GroupContextMenu from "./GroupContextMenu";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { openInExplorer, openSteamWorkshop } from "../../lib/tauriApi";
 import { useModListState, type CategoryKey } from "./useModListState";
 import { useCardDrag } from "./useCardDrag";
@@ -79,11 +80,20 @@ export default function ModList({ saving, onSelectMod }: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
 
   const handleDeleteGroup = useCallback(
-    (groupId: string) => {
+    async (groupId: string) => {
+      const group = groups.find((g) => g.id === groupId);
+      const count = group?.modKeys.length ?? 0;
+      const confirmed = await ask(
+        count > 0
+          ? `确定要删除此分组吗？分组内的 ${count} 个 Mod 将回到未分组状态。`
+          : "确定要删除此空分组吗？",
+        { title: "删除分组", kind: "warning" },
+      );
+      if (!confirmed) return;
       setGroups((prev) => prev.filter((g) => g.id !== groupId));
       setGroupOrder((prev) => prev.filter((id) => id !== groupId));
     },
-    [setGroups, setGroupOrder],
+    [setGroups, setGroupOrder, groups],
   );
 
   const handleToggleGroup = useCallback(
@@ -232,9 +242,14 @@ export default function ModList({ saving, onSelectMod }: Props) {
   );
 
   const handleUngroup = useCallback(
-    (groupId: string) => {
+    async (groupId: string) => {
       const group = groups.find((g) => g.id === groupId);
-      if (!group) return;
+      if (!group || group.modKeys.length === 0) return;
+      const confirmed = await ask(
+        `确定要取消此分组吗？分组内的 ${group.modKeys.length} 个 Mod 将回到未分组状态。`,
+        { title: "取消分组", kind: "warning" },
+      );
+      if (!confirmed) return;
       // Pass displayOrder so the emptied group gets a valid anchorAfter
       const order = filter.displayOrder;
       for (const mk of group.modKeys) {
@@ -693,8 +708,8 @@ export default function ModList({ saving, onSelectMod }: Props) {
               setModOrder(contextMenu.key, mod.order + 1);
               setDirty(true);
             }}
-            onOpenInExplorer={() => openInExplorer(mod.dirPath).catch(() => {})}
-            onOpenWorkshop={() => openSteamWorkshop(mod.fileId).catch(() => {})}
+            onOpenInExplorer={() => openInExplorer(mod.dirPath).catch((e) => setLastMessage(String(e)))}
+            onOpenWorkshop={() => openSteamWorkshop(mod.fileId).catch((e) => setLastMessage(String(e)))}
             onViewDetail={() => onSelectMod(contextMenu.key)}
           />
         );

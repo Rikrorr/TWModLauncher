@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import type { ModInfo } from "../../lib/types";
 import { renderColoredText } from "../../utils/renderColoredText";
 import { openInExplorer, openSteamWorkshop, openWorkshopUrl } from "../../lib/tauriApi";
+import { message } from "@tauri-apps/plugin-dialog";
 import { createLogger } from "../../lib/logger";
 
 interface Props {
@@ -156,15 +157,28 @@ export default function ModCard({
             pattern="[0-9]*"
             value={localOrder}
             onChange={(e) => {
-              const raw = e.target.value.replace(/^0+/, "");
-              const v = parseInt(raw, 10);
-              setLocalOrder(raw === "" || isNaN(v) ? 0 : v);
+              const raw = e.target.value;
+              if (raw === "") {
+                setLocalOrder(mod.order);
+                return;
+              }
+              const stripped = raw.replace(/^0+/, "");
+              const v = parseInt(stripped || "0", 10);
+              if (isNaN(v)) {
+                setLocalOrder(mod.order);
+                return;
+              }
+              setLocalOrder(v);
             }}
             onBlur={() => {
-              const clamped = Math.max(0, Math.floor(localOrder));
-              setLocalOrder(clamped);
-              if (clamped !== mod.order) {
-                onOrderChange?.(clamped);
+              const floored = Math.floor(localOrder);
+              if (floored < 0 || isNaN(floored)) {
+                setLocalOrder(mod.order);
+                return;
+              }
+              setLocalOrder(floored);
+              if (floored !== mod.order) {
+                onOrderChange?.(floored);
               }
             }}
             onKeyDown={(e) => {
@@ -324,15 +338,28 @@ export default function ModCard({
             pattern="[0-9]*"
             value={localOrder}
             onChange={(e) => {
-              const raw = e.target.value.replace(/^0+/, "");
-              const v = parseInt(raw, 10);
-              setLocalOrder(raw === "" || isNaN(v) ? 0 : v);
+              const raw = e.target.value;
+              if (raw === "") {
+                setLocalOrder(mod.order);
+                return;
+              }
+              const stripped = raw.replace(/^0+/, "");
+              const v = parseInt(stripped || "0", 10);
+              if (isNaN(v)) {
+                setLocalOrder(mod.order);
+                return;
+              }
+              setLocalOrder(v);
             }}
             onBlur={() => {
-              const clamped = Math.max(0, Math.floor(localOrder));
-              setLocalOrder(clamped);
-              if (clamped !== mod.order) {
-                onOrderChange?.(clamped);
+              const floored = Math.floor(localOrder);
+              if (floored < 0 || isNaN(floored)) {
+                setLocalOrder(mod.order);
+                return;
+              }
+              setLocalOrder(floored);
+              if (floored !== mod.order) {
+                onOrderChange?.(floored);
               }
             }}
             onKeyDown={(e) => {
@@ -366,7 +393,9 @@ export default function ModCard({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    openWorkshopUrl(mod.fileId).catch(() => {});
+                    openWorkshopUrl(mod.fileId).catch((e) => {
+                      message(String(e), { title: "错误", kind: "error" });
+                    });
                   }}
                   className="text-[12px] text-slate-600 hover:text-blue-400 cursor-pointer transition-colors"
                 >
@@ -376,7 +405,9 @@ export default function ModCard({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    openSteamWorkshop(mod.fileId).catch(() => {});
+                    openSteamWorkshop(mod.fileId).catch((e) => {
+                      message(String(e), { title: "错误", kind: "error" });
+                    });
                   }}
                   className="text-[12px] text-slate-600 hover:text-blue-400 cursor-pointer transition-colors"
                 >
@@ -388,7 +419,9 @@ export default function ModCard({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              openInExplorer(mod.dirPath).catch(() => {});
+              openInExplorer(mod.dirPath).catch((e) => {
+                message(String(e), { title: "错误", kind: "error" });
+              });
             }}
             title="打开 Mod 所在文件夹"
             className="text-[12px] text-slate-600 hover:text-slate-400 cursor-pointer transition-colors"
