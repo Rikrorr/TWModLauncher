@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ModGroup } from "../../lib/types";
 import { createLogger } from "../../lib/logger";
+import { useModStore } from "../../store/useModStore";
 import {
   autoScroll,
   snapshotDragPositions,
@@ -56,6 +57,28 @@ export function useCardDrag({
       // ── shared: snapshot all DOM positions ──
       snapshotDragPositions(refs, groups);
 
+      // ── multi-drag detection ──
+      const storeSelection = useModStore.getState().selectedModKeys;
+
+      let multiDrag = false;
+      let multiDragKeys: string[] = [];
+      let multiDragMinIdx = idx;
+      let multiDragMaxIdx = idx;
+
+      if (storeSelection.length > 1 && storeSelection.includes(key)) {
+        multiDrag = true;
+        multiDragKeys = [...storeSelection];
+        // Compute block boundaries
+        for (const sk of multiDragKeys) {
+          const si = displayOrder.indexOf(sk);
+          if (si !== -1) {
+            if (si < multiDragMinIdx) multiDragMinIdx = si;
+            if (si > multiDragMaxIdx) multiDragMaxIdx = si;
+          }
+        }
+        log.debug(`[drag] multi-drag detected: ${multiDragKeys.length} keys, range [${multiDragMinIdx}, ${multiDragMaxIdx}]`);
+      }
+
       setDragState({
         sourceKey: key,
         sourceIdx: idx,
@@ -63,6 +86,10 @@ export function useCardDrag({
         startY: e.clientY,
         started: false,
         sourceGroupId: modGroupMapRef.current.get(key) ?? undefined,
+        multiDrag,
+        multiDragKeys: multiDragKeys.length > 0 ? multiDragKeys : undefined,
+        multiDragMinIdx: multiDrag ? multiDragMinIdx : undefined,
+        multiDragMaxIdx: multiDrag ? multiDragMaxIdx : undefined,
       });
     },
     [displayOrder, groups, modGroupMapRef, refs],
@@ -116,8 +143,10 @@ export function useCardDrag({
       const draggedGroupId = currentGroupMap.get(ds.sourceKey) ?? null;
 
       const targets: { key: string; top: number; bottom: number; midY: number }[] = [];
+      const multiKeys = ds.multiDragKeys;
       positions.forEach((pos, k) => {
         if (k === ds.sourceKey) return;
+        if (multiKeys?.includes(k)) return;
         const gid = currentGroupMap.get(k) ?? null;
         if (draggedGroupId) {
           // Grouped card: include cards in the same group + ungrouped cards
@@ -342,12 +371,92 @@ export function useCardDrag({
     const handleMouseUp = () => {
       const ds = dragStateRef.current;
       const targetGroupId = dragOverGroupRef.current;
-      log.debug(`[drag] mouseup sourceKey=${ds?.sourceKey} started=${ds?.started} sourceIdx=${ds?.sourceIdx} currentIdx=${ds?.currentIdx} dragOverGroup=${targetGroupId} slotBeforeGroupId=${ds?.slotBeforeGroupId}`);
+      log.debug(`[drag] mouseup sourceKey=${ds?.sourceKey} started=${ds?.started} sourceIdx=${ds?.sourceIdx} currentIdx=${ds?.currentIdx} dragOverGroup=${targetGroupId} slotBeforeGroupId=${ds?.slotBeforeGroupId} multiDrag=${ds?.multiDrag}`);
       setDragState(null);
 
       if (ds?.started) {
         setTimeout(() => { refs.preventClickRef.current = false; }, 0);
 
+        // ── Multi-drag: move all selected items as a block ──
+        if (ds.multiDrag && ds.multiDragKeys && ds.multiDragKeys.length > 1) {
+          const keys = ds.multiDragKeys;
+          const blockSize = keys.length;
+          const minIdx = ds.multiDragMinIdx ?? ds.sourceIdx;
+          const maxIdx = ds.multiDragMaxIdx ?? ds.sourceIdx;
+
+          // Compute adjusted target: the currentIdx points to where the block
+          // should land. Skip reorder when the block wouldn't actually move.
+          const crossGroupMove = !!(targetGroupId && ds.sourceGroupId && targetGroupId !== ds.sourceGroupId);
+
+          if (!crossGroupMove && ds.sourceIdx !== ds.currentIdx && !ds.slotBeforeGroupId) {
+            setDisplayOrder((prev) => {
+              const next = [...prev];
+              // Remove all selected items
+              const removed: string[] = [];
+              for (const k of keys) {
+                const i = next.indexOf(k);
+                if (i !== -1) removed.push(...next.splice(i, 1));
+              }
+              // Compute insertion position
+              let insertAt = ds.currentIdx;
+              // Adjust: if target was after the block, account for removed items
+              if (ds.currentIdx > maxIdx) {
+                insertAt = ds.currentIdx - blockSize;
+              } else if (ds.currentIdx > minIdx) {
+                insertAt = minIdx;
+              }
+              insertAt = Math.max(0, Math.min(insertAt, next.length));
+              next.splice(insertAt, 0, ...removed);
+              return next;
+            });
+          } else if (ds.slotBeforeGroupId) {
+            // Block snaps to before a group
+            const group = groups.find((g) => g.id === ds.slotBeforeGroupId);
+            if (group) {
+              const order = [...displayOrder];
+              let groupMinIdx = order.length;
+              for (const mk of group.modKeys) {
+                const i = order.indexOf(mk);
+                if (i !== -1 && i < groupMinIdx) groupMinIdx = i;
+              }
+              // Remove selected keys
+              const removed: string[] = [];
+              for (const k of keys) {
+                const i = order.indexOf(k);
+                if (i !== -1) removed.push(...order.splice(i, 1));
+              }
+              // Recalculate insert position after removal
+              let insertAt = order.findIndex((k) => group.modKeys.includes(k));
+              if (insertAt === -1) insertAt = order.length;
+              order.splice(insertAt, 0, ...removed);
+              setDisplayOrder(order);
+            }
+          }
+
+          // Group operations for multi-drag
+          if (targetGroupId && targetGroupId !== ds.sourceGroupId && !ds.slotBeforeGroupId) {
+            // Dropped onto a different group → move all selected mods to that group
+            const order = displayOrderRef.current;
+            for (const k of keys) {
+              handleMoveToGroup(k, targetGroupId, order);
+            }
+          } else if (ds.exitingGroup) {
+            // Block exited its group → ungroup all selected mods
+            const order = displayOrderRef.current;
+            for (const k of keys) {
+              handleMoveToGroup(k, null, order);
+            }
+          }
+
+          // Clear multi-selection state after drag
+          useModStore.getState().clearSelection();
+
+          dragOverGroupRef.current = null;
+          setDragOverGroupId(null);
+          return;
+        }
+
+        // ── Single-item drag (existing logic) ──
         const effectiveTargetIdx = ds.slotBeforeGroupId
           ? (() => {
               const group = groups.find((g) => g.id === ds.slotBeforeGroupId);

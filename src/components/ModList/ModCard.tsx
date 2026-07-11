@@ -9,7 +9,8 @@ interface Props {
   mod: ModInfo;
   disabled?: boolean;
   onToggle: (fileId: number, enabled: boolean) => void;
-  onSelect: () => void;
+  onSelect: (e: React.MouseEvent) => void;
+  onDoubleClick?: () => void;
   onOrderUp?: (e: React.MouseEvent) => void;
   onOrderDown?: (e: React.MouseEvent) => void;
   onOrderChange?: (order: number) => void;
@@ -17,6 +18,7 @@ interface Props {
   onDragMouseDown?: (e: React.MouseEvent, key: string) => void;
   isDragging?: boolean;
   isDragOver?: boolean;
+  isSelected?: boolean;
   viewMode?: "detailed" | "compact";
 }
 
@@ -29,12 +31,14 @@ export default function ModCard({
   disabled,
   onToggle,
   onSelect,
+  onDoubleClick,
   onOrderUp,
   onOrderDown,
   onOrderChange,
   onDragMouseDown,
   isDragging,
   isDragOver,
+  isSelected,
   viewMode = "detailed",
 }: Props) {
   const [localOrder, setLocalOrder] = useState(mod.order);
@@ -62,6 +66,20 @@ export default function ModCard({
     [onDragMouseDown, mod.source, mod.fileId],
   );
 
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Don't select when clicking interactive elements
+      const target = e.target as HTMLElement;
+      if (target.closest(INTERACTIVE_SELECTOR)) return;
+      onSelect(e);
+    },
+    [onSelect],
+  );
+
+  const selectedClass = isSelected
+    ? "ring-2 ring-blue-500 bg-blue-950/20"
+    : "";
+
   const sourceLabel = mod.source === 1 ? "创意工坊" : "本地";
   const sourceColor =
     mod.source === 1
@@ -71,7 +89,8 @@ export default function ModCard({
   if (viewMode === "compact") {
     return (
       <div
-        onClick={onSelect}
+        onClick={handleClick}
+        onDoubleClick={onDoubleClick}
         onMouseDown={handleMouseDown}
         className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 transition-colors hover:border-slate-500 cursor-pointer ${
           mod.enabled
@@ -81,7 +100,7 @@ export default function ModCard({
           isDragging ? "opacity-30" : ""
         } ${
           isDragOver ? "border-blue-500 bg-blue-950/30" : ""
-        }`}
+        } ${selectedClass}`}
       >
         {/* 1. Name */}
         <h3
@@ -219,7 +238,8 @@ export default function ModCard({
 
   return (
     <div
-      onClick={onSelect}
+      onClick={handleClick}
+      onDoubleClick={onDoubleClick}
       onMouseDown={handleMouseDown}
       className={`flex items-start gap-4 rounded-lg border p-4 transition-colors hover:border-slate-500 cursor-pointer ${
         mod.enabled
@@ -229,7 +249,7 @@ export default function ModCard({
         isDragging ? "opacity-30" : ""
       } ${
         isDragOver ? "border-blue-500 bg-blue-950/30" : ""
-      }`}
+      } ${selectedClass}`}
     >
       {/* Cover image — only in detailed mode */}
       {viewMode === "detailed" && (

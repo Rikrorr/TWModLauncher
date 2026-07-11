@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Fuse from "fuse.js";
 import { useModStore } from "../../store/useModStore";
 import { useAppStore } from "../../store/useAppStore";
@@ -8,6 +8,7 @@ import ModFilterBar from "./ModFilterBar";
 import ModGroupHeader from "./ModGroupHeader";
 import ModContextMenu from "./ModContextMenu";
 import GroupContextMenu from "./GroupContextMenu";
+import MultiContextMenu from "./MultiContextMenu";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { openInExplorer, openSteamWorkshop } from "../../lib/tauriApi";
 import { useModListState, type CategoryKey } from "./useModListState";
@@ -66,6 +67,15 @@ export default function ModList({ saving, onSelectMod }: Props) {
   const groupOrder = useAppStore((s) => s.groupOrder);
   const setGroupOrder = useAppStore((s) => s.setGroupOrder);
 
+  // ── Multi-select ──────────────────────────────────────────────────────────
+  const selectedModKeys = useModStore((s) => s.selectedModKeys);
+  const lastClickedKey = useModStore((s) => s.lastClickedKey);
+  const selectModOnly = useModStore((s) => s.selectModOnly);
+  const toggleSelectMod = useModStore((s) => s.toggleSelectMod);
+  const addModsToSelection = useModStore((s) => s.addModsToSelection);
+  const clearSelection = useModStore((s) => s.clearSelection);
+  const selectionCount = selectedModKeys.length;
+
   // ── Filter / search state ────────────────────────────────────────────────
   const filter = useModListState(mods);
 
@@ -76,6 +86,7 @@ export default function ModList({ saving, onSelectMod }: Props) {
   type ContextMenuState =
     | { type: "mod"; key: string; x: number; y: number }
     | { type: "group"; groupId: string; x: number; y: number }
+    | { type: "multi"; x: number; y: number }
     | null;
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
 
@@ -259,6 +270,86 @@ export default function ModList({ saving, onSelectMod }: Props) {
     [groups, handleMoveToGroup, filter.displayOrder],
   );
 
+  // ── Batch mod operations (for multi-select context menu) ──────────────────
+  const handleBatchToggleMods = useCallback(() => {
+    const currentMods = useModStore.getState().mods;
+    const selectedSet = new Set(selectedModKeys);
+    const selected = currentMods.filter((m) => selectedSet.has(`${m.source}_${m.fileId}`));
+    const allEnabled = selected.every((m) => m.enabled);
+    const newEnabled = !allEnabled;
+    for (const m of selected) {
+      useModStore.getState().toggleMod(m.fileId, newEnabled);
+    }
+    setDirty(true);
+  }, [selectedModKeys, setDirty]);
+
+  const handleBatchSendToGroup = useCallback(
+    (targetGroupId: string) => {
+      const order = [...filter.displayOrder];
+      for (const key of selectedModKeys) {
+        handleMoveToGroup(key, targetGroupId, order);
+      }
+      // Reposition in displayOrder — place after target group's last member
+      const targetGroup = groups.find((g) => g.id === targetGroupId);
+      let insertAfterIdx = -1;
+      if (targetGroup) {
+        for (const mk of targetGroup.modKeys) {
+          const idx = order.indexOf(mk);
+          if (idx > insertAfterIdx) insertAfterIdx = idx;
+        }
+      }
+      filter.setDisplayOrder((prev) => {
+        const next = prev.filter((k) => !selectedModKeys.includes(k));
+        const insertAt = insertAfterIdx === -1 ? next.length : insertAfterIdx + 1;
+        next.splice(insertAt, 0, ...selectedModKeys);
+        return next;
+      });
+      setDirty(true);
+      clearSelection();
+    },
+    [selectedModKeys, filter.displayOrder, filter.setDisplayOrder, groups, handleMoveToGroup, setDirty, clearSelection],
+  );
+
+  const handleBatchOrderUp = useCallback(() => {
+    filter.setDisplayOrder((prev) => {
+      const next = [...prev];
+      const selectedSet = new Set(selectedModKeys);
+      // Move each selected mod up, skipping other selected mods
+      for (let i = 0; i < next.length; i++) {
+        if (selectedSet.has(next[i])) {
+          let j = i - 1;
+          while (j >= 0 && selectedSet.has(next[j])) j--;
+          if (j >= 0) {
+            const [item] = next.splice(i, 1);
+            next.splice(j, 0, item);
+          }
+        }
+      }
+      return next;
+    });
+    setDirty(true);
+  }, [selectedModKeys, filter.setDisplayOrder, setDirty]);
+
+  const handleBatchOrderDown = useCallback(() => {
+    filter.setDisplayOrder((prev) => {
+      const next = [...prev];
+      const selectedSet = new Set(selectedModKeys);
+      // Move each selected mod down, skipping other selected mods
+      for (let i = next.length - 1; i >= 0; i--) {
+        if (selectedSet.has(next[i])) {
+          let j = i + 1;
+          while (j < next.length && selectedSet.has(next[j])) j++;
+          if (j < next.length) {
+            const [item] = next.splice(i, 1);
+            next.splice(j, 0, item);
+          }
+        }
+      }
+      return next;
+    });
+    setDirty(true);
+  }, [selectedModKeys, filter.setDisplayOrder, setDirty]);
+
   // modKey → group lookup
   const modGroupMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -413,6 +504,47 @@ export default function ModList({ saving, onSelectMod }: Props) {
     [toggleMod, setDirty],
   );
 
+  // ── Selection click handlers ──────────────────────────────────────────────
+  const handleModClick = useCallback(
+    (key: string, e: React.MouseEvent) => {
+      if (preventClickRef.current) return;
+      if (e.ctrlKey || e.metaKey) {
+        toggleSelectMod(key);
+      } else if (e.shiftKey && lastClickedKey) {
+        const disp = filter.displayOrder;
+        const from = disp.indexOf(lastClickedKey);
+        const to = disp.indexOf(key);
+        if (from !== -1 && to !== -1) {
+          const range = disp.slice(Math.min(from, to), Math.max(from, to) + 1);
+          addModsToSelection(range);
+        } else {
+          toggleSelectMod(key);
+        }
+      } else {
+        clearSelection();
+        selectModOnly(key);
+      }
+    },
+    [preventClickRef, toggleSelectMod, lastClickedKey,
+     filter.displayOrder, addModsToSelection, clearSelection, selectModOnly],
+  );
+
+  const handleModDoubleClick = useCallback(
+    (key: string) => {
+      if (preventClickRef.current) return;
+      onSelectMod(key);
+    },
+    [preventClickRef, onSelectMod],
+  );
+
+  // Groups no longer participate in multi-select — clicking clears mod selection
+  const handleGroupClick = useCallback(
+    () => {
+      clearSelection();
+    },
+    [clearSelection],
+  );
+
   // ── Filtered mods ────────────────────────────────────────────────────────
   const fuse = useMemo(
     () => new Fuse(mods, { keys: ["title", "author", "description"], threshold: 0.4 }),
@@ -454,6 +586,24 @@ export default function ModList({ saving, onSelectMod }: Props) {
 
   // ── Refs for context-menu position lookup ───────────────────────────────
   const renderItemsRef = useRef<RenderItem[]>([]);
+
+  // ── Container click: clear selection on interactive elements ────────────
+  const handleContainerClick = useCallback(
+    (e: React.MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest("button, input, label, select")) {
+        clearSelection();
+        setContextMenu(null);
+        setEditingGroupId(null);
+      }
+    },
+    [clearSelection],
+  );
+
+  // Close context menu when selection changes
+  useEffect(() => {
+    setContextMenu(null);
+  }, [selectedModKeys]);
 
   // ── Render: loading / error / empty ──────────────────────────────────────
   if (scanning) {
@@ -500,7 +650,7 @@ export default function ModList({ saving, onSelectMod }: Props) {
   const cardInsertLineIdx = computeCardInsertLineIdx(dragState, filter.displayOrder, dragOverGroupId, renderItems);
   const ghds = groupHeaderDragState;
   const groupInsertLineIdx = computeGroupInsertLineIdx(ghds, groupOrder, renderItems);
-  const groupDragCardInsertLineIdx = computeGroupDragCardInsertLineIdx(ghds, renderItems);
+  const groupDragCardInsertLineIdx = computeGroupDragCardInsertLineIdx(ghds, renderItems, filter.displayOrder, groups);
 
   // Card-drag insertion line indentation: indented (ml-6) for within-group
   // reorder or when an ungrouped card is entering a group.
@@ -511,7 +661,7 @@ export default function ModList({ saving, onSelectMod }: Props) {
 
   // ── Main render ──────────────────────────────────────────────────────────
   return (
-    <>
+    <div onClick={handleContainerClick}>
       <ModFilterBar
         search={filter.search}
         onSearchChange={filter.setSearch}
@@ -553,7 +703,12 @@ export default function ModList({ saving, onSelectMod }: Props) {
       />
 
       {/* Scrollable cards area */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div
+        className="flex-1 overflow-y-auto px-6 py-4"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) clearSelection();
+        }}
+      >
         <div ref={listRef}>
           {filtered.length === 0 ? (
             <p className="text-sm text-slate-500 text-center py-8">没有匹配的 Mod</p>
@@ -572,7 +727,7 @@ export default function ModList({ saving, onSelectMod }: Props) {
               if (item.type === "group-header") {
                 const group = item.group;
                 return (
-                  <Fragment key={group.id}>
+                  <div key={group.id} onClick={handleGroupClick}>
                     {index === groupInsertLineIdx && (
                       <div className="relative h-0 z-20">
                         <div className="absolute left-1 right-1 -top-[2px] h-[3px] bg-blue-500 rounded-full shadow-[0_0_6px_rgba(59,130,246,0.7)]" />
@@ -602,7 +757,7 @@ export default function ModList({ saving, onSelectMod }: Props) {
                       onStartEdit={setEditingGroupId}
                       onStopEdit={() => setEditingGroupId(null)}
                     />
-                  </Fragment>
+                  </div>
                 );
               }
 
@@ -626,7 +781,15 @@ export default function ModList({ saving, onSelectMod }: Props) {
                     data-mod-key={item.key}
                     onContextMenu={(e) => {
                       e.preventDefault();
-                      setContextMenu({ type: "mod", key: item.key, x: e.clientX, y: e.clientY });
+                      if (selectionCount > 1 && selectedModKeys.includes(item.key)) {
+                        setContextMenu({
+                          type: "multi",
+                          x: e.clientX,
+                          y: e.clientY,
+                        });
+                      } else {
+                        setContextMenu({ type: "mod", key: item.key, x: e.clientX, y: e.clientY });
+                      }
                     }}
                     className={`${item.indented ? "ml-6" : ""} ${
                       dragging
@@ -638,10 +801,8 @@ export default function ModList({ saving, onSelectMod }: Props) {
                       mod={mod}
                       disabled={saving}
                       onToggle={handleToggle}
-                      onSelect={() => {
-                        if (preventClickRef.current) return;
-                        onSelectMod(item.key);
-                      }}
+                      onSelect={(e) => handleModClick(item.key, e)}
+                      onDoubleClick={() => handleModDoubleClick(item.key)}
                       onOrderUp={(e) => {
                         e.stopPropagation();
                         setModOrder(item.key, mod.order + 1);
@@ -656,6 +817,7 @@ export default function ModList({ saving, onSelectMod }: Props) {
                       onDragMouseDown={handleDragMouseDown}
                       isDragging={dragging}
                       isDragOver={false}
+                      isSelected={selectedModKeys.includes(item.key)}
                       viewMode={filter.viewMode}
                     />
                   </div>
@@ -731,6 +893,26 @@ export default function ModList({ saving, onSelectMod }: Props) {
           />
         );
       })()}
-    </>
+
+      {contextMenu?.type === "multi" && (() => {
+        const selectedSet = new Set(selectedModKeys);
+        const selected = mods.filter((m) => selectedSet.has(`${m.source}_${m.fileId}`));
+        const allEnabled = selected.length > 0 && selected.every((m) => m.enabled);
+        return (
+        <MultiContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          modCount={selectedModKeys.length}
+          toggleLabel={allEnabled ? "禁用" : "启用"}
+          onClose={() => setContextMenu(null)}
+          onToggleAll={handleBatchToggleMods}
+          onSendToGroup={handleBatchSendToGroup}
+          onOrderUp={handleBatchOrderUp}
+          onOrderDown={handleBatchOrderDown}
+          groups={groups}
+        />
+        );
+      })()}
+    </div>
   );
 }

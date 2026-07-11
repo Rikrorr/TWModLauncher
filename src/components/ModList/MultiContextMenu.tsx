@@ -1,23 +1,18 @@
 import { useState, useRef, useEffect } from "react";
-import type { ModInfo, ModGroup } from "../../lib/types";
+import type { ModGroup } from "../../lib/types";
 import ContextMenu from "./ContextMenu";
 
 interface Props {
-  modKey: string;
-  mod: ModInfo;
   x: number;
   y: number;
-  groups: ModGroup[];
-  currentGroupId: string | undefined;
+  modCount: number;
+  toggleLabel: string;
   onClose: () => void;
-  onToggle: (fileId: number, enabled: boolean) => void;
-  onSendToGroup: (modKey: string, groupId: string) => void;
-  onCreateGroupAndSend: (modKey: string) => void;
+  onToggleAll: () => void;
+  onSendToGroup: (groupId: string) => void;
   onOrderUp: () => void;
   onOrderDown: () => void;
-  onOpenInExplorer: () => void;
-  onOpenWorkshop: () => void;
-  onViewDetail: () => void;
+  groups: ModGroup[];
 }
 
 function MenuItem({
@@ -48,29 +43,21 @@ function MenuSeparator() {
   return <div className="my-1 border-t border-slate-700" />;
 }
 
-export default function ModContextMenu({
-  modKey,
-  mod,
+export default function MultiContextMenu({
   x,
   y,
-  groups,
-  currentGroupId,
+  modCount,
+  toggleLabel,
   onClose,
-  onToggle,
+  onToggleAll,
   onSendToGroup,
-  onCreateGroupAndSend,
   onOrderUp,
   onOrderDown,
-  onOpenInExplorer,
-  onOpenWorkshop,
-  onViewDetail,
+  groups,
 }: Props) {
   const [sendToOpen, setSendToOpen] = useState(false);
   const sendToRef = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
-
-  // Available groups for "send to" (exclude current group)
-  const availableGroups = groups.filter((g) => g.id !== currentGroupId);
 
   // Close submenu when mouse leaves both the trigger and the submenu
   useEffect(() => {
@@ -104,9 +91,13 @@ export default function ModContextMenu({
 
   return (
     <ContextMenu x={x} y={y} onClose={onClose}>
-      {/* Toggle enable/disable */}
-      <MenuItem onClick={() => handleAction(() => onToggle(mod.fileId, !mod.enabled))}>
-        {mod.enabled ? "禁用" : "启用"}
+      <div className="px-3 py-1.5 text-xs text-slate-400 border-b border-slate-700 mb-1">
+        已选 {modCount} 个 Mod
+      </div>
+
+      {/* Toggle enable/disable all */}
+      <MenuItem onClick={() => handleAction(onToggleAll)}>
+        {toggleLabel}
       </MenuItem>
 
       <MenuSeparator />
@@ -136,30 +127,15 @@ export default function ModContextMenu({
               submenuFlip ? "right-full" : "left-full"
             }`}
           >
-            {availableGroups.length > 0 ? (
-              availableGroups.map((g) => (
-                <button
-                  key={g.id}
-                  onClick={() => handleAction(() => onSendToGroup(modKey, g.id))}
-                  className="w-full text-left px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700/70 transition-colors truncate"
-                >
-                  {g.name}
-                </button>
-              ))
-            ) : (
-              <span className="block px-3 py-1.5 text-sm text-slate-500">
-                无可用分组
-              </span>
-            )}
-
-            <MenuSeparator />
-
-            <button
-              onClick={() => handleAction(() => onCreateGroupAndSend(modKey))}
-              className="w-full text-left px-3 py-1.5 text-sm text-blue-400 hover:bg-slate-700/70 transition-colors"
-            >
-              + 新建分组...
-            </button>
+            {groups.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => handleAction(() => onSendToGroup(g.id))}
+                className="w-full text-left px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700/70 transition-colors truncate"
+              >
+                {g.name || "未命名分组"}
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -172,25 +148,6 @@ export default function ModContextMenu({
       </MenuItem>
       <MenuItem onClick={() => handleAction(onOrderDown)}>
         下移
-      </MenuItem>
-
-      <MenuSeparator />
-
-      {/* File system / workshop */}
-      <MenuItem onClick={() => handleAction(onOpenInExplorer)}>
-        打开所在文件夹
-      </MenuItem>
-      {mod.source === 1 && (
-        <MenuItem onClick={() => handleAction(onOpenWorkshop)}>
-          Steam Workshop 页面
-        </MenuItem>
-      )}
-
-      <MenuSeparator />
-
-      {/* Open config page */}
-      <MenuItem onClick={() => handleAction(onViewDetail)}>
-        打开配置页
       </MenuItem>
     </ContextMenu>
   );

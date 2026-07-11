@@ -26,6 +26,14 @@ export interface CardDragState {
   slotBeforeGroupId?: string;
   sourceGroupId?: string;
   exitingGroup?: 'top' | 'bottom';
+  /** True when dragging a multi-selected card → all selected move together */
+  multiDrag?: boolean;
+  /** All mod keys being moved in this multi-drag */
+  multiDragKeys?: string[];
+  /** First index of the multi-drag block in displayOrder */
+  multiDragMinIdx?: number;
+  /** Last index of the multi-drag block in displayOrder */
+  multiDragMaxIdx?: number;
 }
 
 export interface GroupHeaderDragState {
@@ -330,7 +338,11 @@ export function computeGroupInsertLineIdx(
   groupOrder: string[],
   items: RenderItem[],
 ): number {
-  if (!ghds?.started || ghds.sourceIdx === ghds.currentIdx) return -1;
+  if (!ghds?.started) return -1;
+
+  // No-op: sourceIdx === currentIdx or sourceIdx + 1 === currentIdx
+  // (after splice removal, both result in the same position)
+  if (ghds.sourceIdx === ghds.currentIdx || ghds.sourceIdx + 1 === ghds.currentIdx) return -1;
 
   const targetGid = groupOrder[ghds.currentIdx];
   if (!targetGid) return -1;
@@ -349,8 +361,32 @@ export function computeGroupInsertLineIdx(
 export function computeGroupDragCardInsertLineIdx(
   ghds: GroupHeaderDragState | null,
   items: RenderItem[],
+  displayOrder?: string[],
+  groups?: ModGroup[],
 ): number {
-  if (!ghds?.slotBeforeKey) return -1;
+  if (!ghds?.slotBeforeKey || !displayOrder || !groups) return -1;
+
+  // No-op detection: check if slotBeforeKey is already adjacent to the
+  // source group's cards in the direction the drag would move them.
+  const sourceGroup = groups.find((g) => g.id === ghds.sourceGroupId);
+  if (sourceGroup && sourceGroup.modKeys.length > 0) {
+    let firstIdx = Infinity;
+    let lastIdx = -1;
+    for (const mk of sourceGroup.modKeys) {
+      const di = displayOrder.indexOf(mk);
+      if (di !== -1) {
+        if (di < firstIdx) firstIdx = di;
+        if (di > lastIdx) lastIdx = di;
+      }
+    }
+    if (firstIdx !== Infinity && lastIdx !== -1) {
+      const isNoOp =
+        (!ghds.insertAfter && lastIdx + 1 < displayOrder.length && displayOrder[lastIdx + 1] === ghds.slotBeforeKey) ||
+        (ghds.insertAfter && firstIdx > 0 && displayOrder[firstIdx - 1] === ghds.slotBeforeKey);
+      if (isNoOp) return -1;
+    }
+  }
+
   return items.findIndex(
     (item) => item.type === "mod" && item.key === ghds.slotBeforeKey,
   );
