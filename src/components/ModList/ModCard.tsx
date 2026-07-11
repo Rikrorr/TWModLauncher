@@ -76,6 +76,16 @@ export default function ModCard({
     [onSelect],
   );
 
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Don't trigger double-click on interactive elements
+      const target = e.target as HTMLElement;
+      if (target.closest(INTERACTIVE_SELECTOR)) return;
+      onDoubleClick?.();
+    },
+    [onDoubleClick],
+  );
+
   const selectedClass = isSelected
     ? "ring-2 ring-blue-500 bg-blue-950/20"
     : "";
@@ -90,7 +100,7 @@ export default function ModCard({
     return (
       <div
         onClick={handleClick}
-        onDoubleClick={onDoubleClick}
+        onDoubleClick={handleDoubleClick}
         onMouseDown={handleMouseDown}
         className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 transition-colors hover:border-slate-500 cursor-pointer ${
           mod.enabled
@@ -239,7 +249,7 @@ export default function ModCard({
   return (
     <div
       onClick={handleClick}
-      onDoubleClick={onDoubleClick}
+      onDoubleClick={handleDoubleClick}
       onMouseDown={handleMouseDown}
       className={`flex items-start gap-4 rounded-lg border p-4 transition-colors hover:border-slate-500 cursor-pointer ${
         mod.enabled

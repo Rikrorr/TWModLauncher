@@ -661,7 +661,7 @@ export default function ModList({ saving, onSelectMod }: Props) {
 
   // ── Main render ──────────────────────────────────────────────────────────
   return (
-    <div onClick={handleContainerClick}>
+    <div className="contents" onClick={handleContainerClick}>
       <ModFilterBar
         search={filter.search}
         onSearchChange={filter.setSearch}
