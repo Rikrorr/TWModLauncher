@@ -294,6 +294,9 @@ export function useCardDrag({
       // ungrouped cards between group members in displayOrder.
       if (!draggedGroupId) {
         for (const gid of groupOrderRef.current) {
+          // Cursor is inside this group — user intends to drop into it,
+          // not snap to its boundary. Skip to allow group-enter in mouseup.
+          if (gid === hoveringOverGroup) continue;
           const group = groups.find((g) => g.id === gid);
           if (!group || group.modKeys.length === 0) continue;
           let minIdx = Infinity;

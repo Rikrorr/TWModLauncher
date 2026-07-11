@@ -276,9 +276,9 @@ export function computeCardInsertLineIdx(
   items: RenderItem[],
 ): number {
   if (!dragState?.started) return -1;
-  // Suppress line for cross-group moves (grouped card → DIFFERENT group).
-  // Same-group reorder and ungrouped→group both show the line.
-  if (dragOverGroupId && dragState.sourceGroupId && dragOverGroupId !== dragState.sourceGroupId) return -1;
+  // Suppress line when entering a group (cross-group or ungrouped→group).
+  // Only same-group reorder shows the position line.
+  if (dragOverGroupId && dragOverGroupId !== dragState.sourceGroupId) return -1;
 
   if (dragState.slotBeforeGroupId) {
     return items.findIndex(
@@ -288,7 +288,23 @@ export function computeCardInsertLineIdx(
     );
   }
 
-  if (dragState.sourceIdx !== dragState.currentIdx) {
+  // Suppress no-op moves: after splice-and-reinsert in mouseup,
+  // targetIdx === sourceIdx and targetIdx === sourceIdx + 1 both
+  // result in the card landing at its original position.
+  const noOp = dragState.currentIdx === dragState.sourceIdx || dragState.currentIdx === dragState.sourceIdx + 1;
+  // exitingGroup overrides no-op suppression — the card IS making a
+  // meaningful move out of its group even if the displayOrder index
+  // doesn't change.
+  if (!noOp || dragState.exitingGroup) {
+    // When exiting from the top, show the line before the source group
+    // header (in renderItems), not before the dragged card itself (which
+    // sits inside the group below the header).
+    if (dragState.exitingGroup === 'top') {
+      const groupHeaderIdx = items.findIndex(
+        (item) => item.type === "group-header" && item.group.id === dragState.sourceGroupId,
+      );
+      if (groupHeaderIdx !== -1) return groupHeaderIdx;
+    }
     // Insert after the last card
     if (dragState.currentIdx >= displayOrder.length) {
       return items.length;
