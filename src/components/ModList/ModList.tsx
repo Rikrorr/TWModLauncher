@@ -30,29 +30,6 @@ interface Props {
   onSelectMod: (key: string) => void;
 }
 
-/**
- * Find the card visually just before the group's position in displayOrder,
- * to use as an `anchorAfter` — so the empty group reappears right after it.
- */
-function findAnchorAfterCard(
-  group: ModGroup,
-  displayOrder?: string[],
-): string | undefined {
-  if (!displayOrder) return undefined;
-  const groupModSet = new Set(group.modKeys);
-  let firstIdx = displayOrder.length;
-  for (const mk of group.modKeys) {
-    const idx = displayOrder.indexOf(mk);
-    if (idx !== -1 && idx < firstIdx) firstIdx = idx;
-  }
-  for (let i = firstIdx - 1; i >= 0; i--) {
-    if (!groupModSet.has(displayOrder[i])) {
-      return displayOrder[i];
-    }
-  }
-  return undefined;
-}
-
 export default function ModList({ saving, onSelectMod }: Props) {
   // ── Store ────────────────────────────────────────────────────────────────
   const mods = useModStore((s) => s.mods);
@@ -64,8 +41,6 @@ export default function ModList({ saving, onSelectMod }: Props) {
   const setDirty = useAppStore((s) => s.setDirty);
   const groups = useAppStore((s) => s.groups);
   const setGroups = useAppStore((s) => s.setGroups);
-  const groupOrder = useAppStore((s) => s.groupOrder);
-  const setGroupOrder = useAppStore((s) => s.setGroupOrder);
 
   // ── Multi-select ──────────────────────────────────────────────────────────
   const selectedModKeys = useModStore((s) => s.selectedModKeys);
@@ -102,9 +77,9 @@ export default function ModList({ saving, onSelectMod }: Props) {
       );
       if (!confirmed) return;
       setGroups((prev) => prev.filter((g) => g.id !== groupId));
-      setGroupOrder((prev) => prev.filter((id) => id !== groupId));
+      filter.setDisplayOrder((prev) => prev.filter((id) => id !== groupId));
     },
-    [setGroups, setGroupOrder, groups],
+    [setGroups, filter.setDisplayOrder, groups],
   );
 
   const handleToggleGroup = useCallback(
@@ -122,32 +97,23 @@ export default function ModList({ saving, onSelectMod }: Props) {
   );
 
   const handleMoveToGroup = useCallback(
-    (modKey: string, groupId: string | null, displayOrder?: string[]) => {
+    (modKey: string, groupId: string | null) => {
       setGroups((prev) =>
         prev.map((g) => {
           if (g.id === groupId) {
-            if (g.modKeys.includes(modKey)) return g;
-            const wasEmpty = g.modKeys.length === 0;
+            const deduped = [...new Set(g.modKeys)];
+            if (deduped.includes(modKey)) {
+              return g.collapsed
+                ? { ...g, modKeys: deduped, collapsed: false }
+                : { ...g, modKeys: deduped };
+            }
             return {
               ...g,
-              modKeys: [...g.modKeys, modKey],
-              anchorBefore: wasEmpty ? undefined : g.anchorBefore,
-              anchorAfter: wasEmpty ? undefined : g.anchorAfter,
+              modKeys: [...deduped, modKey],
+              collapsed: false,
             };
           }
-          const filtered = g.modKeys.filter((k) => k !== modKey);
-          // Last mod leaving → anchor the empty group to the card just before
-          // its original visual position, so it stays in place.
-          if (filtered.length === 0 && g.modKeys.length > 0) {
-            const anchor = findAnchorAfterCard(g, displayOrder);
-            return {
-              ...g,
-              modKeys: [],
-              anchorBefore: undefined,
-              anchorAfter: anchor,
-            };
-          }
-          return { ...g, modKeys: filtered };
+          return { ...g, modKeys: g.modKeys.filter((k) => k !== modKey) };
         }),
       );
     },
@@ -156,77 +122,25 @@ export default function ModList({ saving, onSelectMod }: Props) {
 
   // ── Context menu action handlers ──────────────────────────────────────────
 
+  /** Shared helper: move keys to a target group.
+   *  Keys stay in displayOrder — buildRenderItems skips them while
+   *  their group is rendered, and uses displayOrder position for sort. */
+  const moveKeysToGroup = useCallback(
+    (keys: string[], targetGroupId: string) => {
+      const targetGroup = groups.find((g) => g.id === targetGroupId);
+      if (!targetGroup) return;
+      for (const k of keys) {
+        handleMoveToGroup(k, targetGroupId);
+      }
+    },
+    [handleMoveToGroup, groups],
+  );
+
   const handleSendToGroup = useCallback(
     (modKey: string, targetGroupId: string) => {
-      const targetGroup = groups.find((g) => g.id === targetGroupId);
-      const wasEmpty = targetGroup ? targetGroup.modKeys.length === 0 : false;
-      const order = filter.displayOrder;
-
-      // Compute insertion position BEFORE state changes (avoids stale closure)
-      let insertAfterIdx = -1;
-      if (wasEmpty && targetGroup) {
-        // Empty group: use anchor to find where the group visually sits
-        if (targetGroup.anchorBefore && order.indexOf(targetGroup.anchorBefore) !== -1) {
-          insertAfterIdx = order.indexOf(targetGroup.anchorBefore) - 1;
-        } else if (targetGroup.anchorAfter && order.indexOf(targetGroup.anchorAfter) !== -1) {
-          insertAfterIdx = order.indexOf(targetGroup.anchorAfter);
-        } else {
-          // No valid anchors — find the empty group's visual position from renderItems
-          const items = renderItemsRef.current;
-          const headerIdx = items.findIndex(
-            (item) => item.type === "group-header" && item.group.id === targetGroupId,
-          );
-          if (headerIdx !== -1) {
-            // Look for the nearest mod card before the group header
-            for (let i = headerIdx - 1; i >= 0; i--) {
-              const ri = items[i];
-              if (ri.type === "mod") {
-                insertAfterIdx = order.indexOf(ri.key);
-                break;
-              }
-            }
-            // If no mod before, look for the nearest mod after and insert before it
-            if (insertAfterIdx === -1) {
-              for (let i = headerIdx + 1; i < items.length; i++) {
-                const ri = items[i];
-                if (ri.type === "mod") {
-                  insertAfterIdx = order.indexOf(ri.key) - 1;
-                  break;
-                }
-              }
-            }
-          }
-        }
-      } else if (targetGroup) {
-        // Non-empty group: insert after the last member
-        for (const mk of targetGroup.modKeys) {
-          const idx = order.indexOf(mk);
-          if (idx > insertAfterIdx) insertAfterIdx = idx;
-        }
-      }
-
-      // Move mod to target group (pass displayOrder so source group gets proper anchors)
-      handleMoveToGroup(modKey, targetGroupId, order);
-
-      // Reposition in displayOrder atomically.
-      // Must account for index shift: when modKey is removed from prev,
-      // elements after it shift left by 1, so the pre-computed insertAfterIdx
-      // may be off by one if modKey was before the target position.
-      const finalInsertAfterIdx = insertAfterIdx;
-      filter.setDisplayOrder((prev) => {
-        const next = prev.filter((k) => k !== modKey);
-        if (finalInsertAfterIdx === -1) {
-          next.push(modKey);
-        } else {
-          const modKeyOldIdx = prev.indexOf(modKey);
-          const shift = (modKeyOldIdx !== -1 && modKeyOldIdx <= finalInsertAfterIdx) ? 0 : 1;
-          const insertAt = Math.min(finalInsertAfterIdx + shift, next.length);
-          next.splice(insertAt, 0, modKey);
-        }
-        return next;
-      });
+      moveKeysToGroup([modKey], targetGroupId);
     },
-    [handleMoveToGroup, groups, filter.displayOrder, filter.setDisplayOrder],
+    [moveKeysToGroup],
   );
 
   const handleCreateGroupAndSend = useCallback(
@@ -245,11 +159,19 @@ export default function ModList({ saving, onSelectMod }: Props) {
         }));
         return [...updated, newGroup];
       });
-      setGroupOrder((prev) => [...prev, newGroup.id]);
+      // Insert group ID into displayOrder right before the mod key.
+      // The mod key stays — buildRenderItems skips it when the group renders.
+      filter.setDisplayOrder((prev) => {
+        const modIdx = prev.indexOf(modKey);
+        if (modIdx === -1) return [...prev, newGroup.id];
+        const next = [...prev];
+        next.splice(modIdx, 0, newGroup.id);
+        return next;
+      });
       // Trigger rename for the new group
       setTimeout(() => setEditingGroupId(newGroup.id), 0);
     },
-    [setGroups, setGroupOrder],
+    [setGroups, filter.setDisplayOrder],
   );
 
   const handleUngroup = useCallback(
@@ -261,13 +183,15 @@ export default function ModList({ saving, onSelectMod }: Props) {
         { title: "取消分组", kind: "warning" },
       );
       if (!confirmed) return;
-      // Pass displayOrder so the emptied group gets a valid anchorAfter
-      const order = filter.displayOrder;
+      // Move all mods out of the group
       for (const mk of group.modKeys) {
-        handleMoveToGroup(mk, null, order);
+        handleMoveToGroup(mk, null);
       }
+      // Remove the empty group
+      setGroups((prev) => prev.filter((g) => g.id !== groupId));
+      filter.setDisplayOrder((prev) => prev.filter((id) => id !== groupId));
     },
-    [groups, handleMoveToGroup, filter.displayOrder],
+    [groups, handleMoveToGroup, setGroups, filter.setDisplayOrder],
   );
 
   // ── Batch mod operations (for multi-select context menu) ──────────────────
@@ -285,29 +209,11 @@ export default function ModList({ saving, onSelectMod }: Props) {
 
   const handleBatchSendToGroup = useCallback(
     (targetGroupId: string) => {
-      const order = [...filter.displayOrder];
-      for (const key of selectedModKeys) {
-        handleMoveToGroup(key, targetGroupId, order);
-      }
-      // Reposition in displayOrder — place after target group's last member
-      const targetGroup = groups.find((g) => g.id === targetGroupId);
-      let insertAfterIdx = -1;
-      if (targetGroup) {
-        for (const mk of targetGroup.modKeys) {
-          const idx = order.indexOf(mk);
-          if (idx > insertAfterIdx) insertAfterIdx = idx;
-        }
-      }
-      filter.setDisplayOrder((prev) => {
-        const next = prev.filter((k) => !selectedModKeys.includes(k));
-        const insertAt = insertAfterIdx === -1 ? next.length : insertAfterIdx + 1;
-        next.splice(insertAt, 0, ...selectedModKeys);
-        return next;
-      });
+      moveKeysToGroup(selectedModKeys, targetGroupId);
       setDirty(true);
       clearSelection();
     },
-    [selectedModKeys, filter.displayOrder, filter.setDisplayOrder, groups, handleMoveToGroup, setDirty, clearSelection],
+    [selectedModKeys, moveKeysToGroup, setDirty, clearSelection],
   );
 
   const handleBatchOrderUp = useCallback(() => {
@@ -359,8 +265,66 @@ export default function ModList({ saving, onSelectMod }: Props) {
   const modGroupMapRef = useRef(modGroupMap);
   useLayoutEffect(() => { modGroupMapRef.current = modGroupMap; });
 
-  const groupOrderRef = useRef(groupOrder);
-  useLayoutEffect(() => { groupOrderRef.current = groupOrder; });
+  // Reactive group mod counts derived from modGroupMap — always correct
+  // even if modKeys contains duplicates.
+  const groupModCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    modGroupMap.forEach((gid) => {
+      counts.set(gid, (counts.get(gid) ?? 0) + 1);
+    });
+    return counts;
+  }, [modGroupMap]);
+
+  const displayOrderRef = useRef(filter.displayOrder);
+  useLayoutEffect(() => { displayOrderRef.current = filter.displayOrder; });
+
+  // ── Reactive cross-group dedup: guarantee no modKey appears in multiple
+  //    groups. This is a safety net — in normal operation it should never fire.
+  //    When duplicates are detected, keep each key in the group with the
+  //    lowest displayOrder index (i.e. the "first" group visually).
+  useEffect(() => {
+    const keyOwner = new Map<string, string>();
+    const groupPriority = new Map(filter.displayOrder.map((id, i) => [id, i]));
+    const hasDupes = groups.some((g) =>
+      g.modKeys.some((mk) => {
+        const existing = keyOwner.get(mk);
+        if (existing !== undefined) {
+          const existPrio = groupPriority.get(existing) ?? Infinity;
+          const myPrio = groupPriority.get(g.id) ?? Infinity;
+          if (myPrio < existPrio) {
+            keyOwner.set(mk, g.id);
+          }
+          return true;
+        }
+        keyOwner.set(mk, g.id);
+        return false;
+      }),
+    );
+    if (!hasDupes) return;
+
+    // Recompute ownership: each modKey belongs to the earliest group in
+    // displayOrder that contains it.
+    keyOwner.clear();
+    const sorted = groups
+      .map((g) => g)
+      .sort((a, b) => {
+        const pa = groupPriority.get(a.id) ?? Infinity;
+        const pb = groupPriority.get(b.id) ?? Infinity;
+        return pa - pb;
+      });
+    for (const g of sorted) {
+      for (const mk of g.modKeys) {
+        if (!keyOwner.has(mk)) keyOwner.set(mk, g.id);
+      }
+    }
+
+    setGroups((prev) =>
+      prev.map((g) => ({
+        ...g,
+        modKeys: g.modKeys.filter((mk) => keyOwner.get(mk) === g.id),
+      })),
+    );
+  }, [groups, filter.displayOrder, setGroups]);
 
   // ── Persist prefs ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -368,44 +332,25 @@ export default function ModList({ saving, onSelectMod }: Props) {
       localStorage.setItem(
         "twm-filter-prefs",
         JSON.stringify({
-          sortKey: "custom",
           activeCategories: [...filter.activeCategories],
           tagMode: filter.tagMode,
           viewMode: filter.viewMode,
           groups,
           displayOrder: filter.displayOrder,
-          groupOrder,
         }),
       );
     } catch {
       /* ignore */
     }
-  }, [filter.activeCategories, filter.tagMode, filter.viewMode, groups, filter.displayOrder, groupOrder]);
-
-  // Sync groupOrder when groups change
-  useEffect(() => {
-    const groupIdSet = new Set(groups.map((g) => g.id));
-    let changed = false;
-    const filtered = groupOrder.filter((id) => {
-      const ok = groupIdSet.has(id);
-      if (!ok) changed = true;
-      return ok;
-    });
-    for (const g of groups) {
-      if (!filtered.includes(g.id)) {
-        filtered.push(g.id);
-        changed = true;
-      }
-    }
-    if (changed) setGroupOrder(filtered);
-  }, [groups, groupOrder, setGroupOrder]);
+  }, [filter.activeCategories, filter.tagMode, filter.viewMode, groups, filter.displayOrder]);
 
   const handleOrderChange = useCallback(
     (key: string, order: number) => {
+      clearSelection();
       setModOrder(key, order);
       setDirty(true);
     },
-    [setModOrder, setDirty],
+    [setModOrder, setDirty, clearSelection],
   );
 
   const handleApplyOrder = useCallback(() => {
@@ -416,31 +361,36 @@ export default function ModList({ saving, onSelectMod }: Props) {
     let nextOrder = 0;
     const emittedGroups = new Set<string>();
 
-    // Walk displayOrder — when a group is first encountered, emit ALL its
-    // members contiguously (sorted by displayOrder), matching visual rendering.
+    // Walk displayOrder — group IDs and mod keys are interleaved.
+    // Group IDs are UUIDs (no underscore); mod keys are "${source}_${fileId}".
     for (const key of filter.displayOrder) {
-      if (!keyModMap.has(key)) continue;
-
-      const gid = modGroupMap.get(key);
-      if (gid) {
-        if (emittedGroups.has(gid)) continue;
-        emittedGroups.add(gid);
-        const group = groups.find((g) => g.id === gid);
-        if (group) {
-          const sorted = group.modKeys
-            .filter((mk) => keyModMap.has(mk))
-            .sort((a, b) => filter.displayOrder.indexOf(a) - filter.displayOrder.indexOf(b));
-          for (const mk of sorted) {
-            const mod = keyModMap.get(mk)!;
-            if (mod.enabled) updates.push([mk, nextOrder++]);
-            keyModMap.delete(mk);
-          }
+      // Check if this key is a group ID
+      const group = groups.find((g) => g.id === key);
+      if (group) {
+        if (emittedGroups.has(key)) continue;
+        emittedGroups.add(key);
+        // Emit all enabled members in displayOrder-index order
+        const sorted = group.modKeys
+          .filter((mk) => keyModMap.has(mk))
+          .sort((a, b) => {
+            const ai = filter.displayOrder.indexOf(a);
+            const bi = filter.displayOrder.indexOf(b);
+            // Items not in displayOrder go last
+            return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi);
+          });
+        for (const mk of sorted) {
+          const mod = keyModMap.get(mk)!;
+          if (mod.enabled) updates.push([mk, nextOrder++]);
+          keyModMap.delete(mk);
         }
-      } else {
-        const mod = keyModMap.get(key)!;
-        if (mod.enabled) updates.push([key, nextOrder++]);
-        keyModMap.delete(key);
+        continue;
       }
+
+      // Otherwise this is an ungrouped mod key
+      if (!keyModMap.has(key)) continue;
+      const mod = keyModMap.get(key)!;
+      if (mod.enabled) updates.push([key, nextOrder++]);
+      keyModMap.delete(key);
     }
 
     // Remaining enabled mods not in displayOrder
@@ -462,13 +412,13 @@ export default function ModList({ saving, onSelectMod }: Props) {
   const {
     dragState,
     dragOverGroupId,
+    lineIndented,
     handleDragMouseDown,
   } = useCardDrag({
     displayOrder: filter.displayOrder,
     setDisplayOrder: filter.setDisplayOrder,
     groups,
     modGroupMapRef,
-    groupOrderRef,
     handleMoveToGroup,
     refs: dragRefs,
   });
@@ -477,20 +427,17 @@ export default function ModList({ saving, onSelectMod }: Props) {
     groupHeaderDragState,
     handleGroupHeaderDragMouseDown,
   } = useGroupHeaderDrag({
-    groupOrder,
-    setGroupOrder,
-    groups,
-    setGroups,
+    displayOrder: filter.displayOrder,
     setDisplayOrder: filter.setDisplayOrder,
+    groups,
     refs: dragRefs,
   });
 
   const { groupCreateState, handleGroupCreateMouseDown } = useGroupCreateDrag({
     setGroups,
-    setGroupOrder,
+    setDisplayOrder: filter.setDisplayOrder,
     setEditingGroupId,
     modGroupMapRef,
-    groupOrderRef,
     groups,
     refs: dragRefs,
   });
@@ -498,35 +445,101 @@ export default function ModList({ saving, onSelectMod }: Props) {
   // ── Toggle handler ───────────────────────────────────────────────────────
   const handleToggle = useCallback(
     (fileId: number, enabled: boolean) => {
+      clearSelection();
       toggleMod(fileId, enabled);
       setDirty(true);
     },
-    [toggleMod, setDirty],
+    [toggleMod, setDirty, clearSelection],
   );
 
   // ── Selection click handlers ──────────────────────────────────────────────
+  const saveEditAndExit = useCallback(() => {
+    if (!editingGroupId) return;
+    const input = document.querySelector(
+      `[data-folder-id="${editingGroupId}"] input`,
+    ) as HTMLInputElement | null;
+    if (input) {
+      const val = input.value.trim();
+      if (val) {
+        const gid = editingGroupId;
+        setGroups((prev) => prev.map((g) => (g.id === gid ? { ...g, name: val } : g)));
+      }
+    }
+    setEditingGroupId(null);
+  }, [editingGroupId, setGroups, setEditingGroupId]);
+
   const handleModClick = useCallback(
     (key: string, e: React.MouseEvent) => {
       if (preventClickRef.current) return;
+      saveEditAndExit();
       if (e.ctrlKey || e.metaKey) {
-        toggleSelectMod(key);
+        // Context-locked: grouped and ungrouped mods never mix.
+        // Toggling a mod from a different context clears the old selection.
+        const curMap = modGroupMapRef.current;
+        const clickedCtx = curMap.get(key) ?? null;
+        if (selectedModKeys.length > 0) {
+          const selCtx = curMap.get(selectedModKeys[0]) ?? null;
+          if (clickedCtx !== selCtx) {
+            selectModOnly(key);
+          } else {
+            toggleSelectMod(key);
+          }
+        } else {
+          toggleSelectMod(key);
+        }
       } else if (e.shiftKey && lastClickedKey) {
         const disp = filter.displayOrder;
         const from = disp.indexOf(lastClickedKey);
         const to = disp.indexOf(key);
         if (from !== -1 && to !== -1) {
-          const range = disp.slice(Math.min(from, to), Math.max(from, to) + 1);
-          addModsToSelection(range);
+          // Range selection respects group boundaries:
+          // - Both in same group  → select only mods from that group
+          // - Both ungrouped      → select only ungrouped mods
+          // - Cross-context       → just toggle the clicked key
+          const currentGroupMap = modGroupMapRef.current;
+          const lastG = currentGroupMap.get(lastClickedKey) ?? null;
+          const curG = currentGroupMap.get(key) ?? null;
+
+          let range: string[];
+          if (lastG && lastG === curG) {
+            // Same group: select group members in the displayOrder range
+            const groupMemberSet = new Set(
+              groups.find((g) => g.id === lastG)?.modKeys ?? [],
+            );
+            range = disp
+              .slice(Math.min(from, to), Math.max(from, to) + 1)
+              .filter((k) => groupMemberSet.has(k));
+          } else if (!lastG && !curG) {
+            // Both ungrouped: select only ungrouped mods
+            const groupIdSet = new Set(groups.map((g) => g.id));
+            const groupedSet = new Set<string>();
+            for (const g of groups) {
+              for (const mk of g.modKeys) groupedSet.add(mk);
+            }
+            range = disp
+              .slice(Math.min(from, to), Math.max(from, to) + 1)
+              .filter((k) => !groupIdSet.has(k) && !groupedSet.has(k));
+          } else {
+            // Cross-context — no range, fall through to toggle
+            range = [];
+          }
+
+          if (range.length > 0) {
+            addModsToSelection(range);
+          } else {
+            // Cross-context or empty range: clear old selection, start fresh
+            selectModOnly(key);
+          }
         } else {
-          toggleSelectMod(key);
+          selectModOnly(key);
         }
       } else {
         clearSelection();
         selectModOnly(key);
       }
     },
-    [preventClickRef, toggleSelectMod, lastClickedKey,
-     filter.displayOrder, addModsToSelection, clearSelection, selectModOnly],
+    [preventClickRef, toggleSelectMod, lastClickedKey, saveEditAndExit,
+     filter.displayOrder, groups, addModsToSelection, clearSelection, selectModOnly],
   );
 
   const handleModDoubleClick = useCallback(
@@ -540,9 +553,10 @@ export default function ModList({ saving, onSelectMod }: Props) {
   // Groups no longer participate in multi-select — clicking clears mod selection
   const handleGroupClick = useCallback(
     () => {
+      saveEditAndExit();
       clearSelection();
     },
-    [clearSelection],
+    [clearSelection, saveEditAndExit],
   );
 
   // ── Filtered mods ────────────────────────────────────────────────────────
@@ -594,7 +608,6 @@ export default function ModList({ saving, onSelectMod }: Props) {
       if (target.closest("button, input, label, select")) {
         clearSelection();
         setContextMenu(null);
-        setEditingGroupId(null);
       }
     },
     [clearSelection],
@@ -639,7 +652,6 @@ export default function ModList({ saving, onSelectMod }: Props) {
   const renderItems = buildRenderItems(
     filter.displayOrder,
     groups,
-    groupOrder,
     filtered,
     modGroupMap,
     groupCreateState,
@@ -647,17 +659,19 @@ export default function ModList({ saving, onSelectMod }: Props) {
   // Keep ref in sync (direct assignment during render is safe for refs)
   renderItemsRef.current = renderItems;
 
-  const cardInsertLineIdx = computeCardInsertLineIdx(dragState, filter.displayOrder, dragOverGroupId, renderItems);
-  const ghds = groupHeaderDragState;
-  const groupInsertLineIdx = computeGroupInsertLineIdx(ghds, groupOrder, renderItems);
-  const groupDragCardInsertLineIdx = computeGroupDragCardInsertLineIdx(ghds, renderItems, filter.displayOrder, groups);
-
-  // Card-drag insertion line indentation: indented (ml-6) for within-group
-  // reorder or when an ungrouped card is entering a group.
-  const cardLineIndented = dragState?.started && (
-    (dragState.sourceGroupId != null && dragState.exitingGroup == null) ||
-    dragOverGroupId != null
+  const sourceGroupId =
+    dragState?.sourceKey ? (modGroupMap.get(dragState.sourceKey) ?? null) : null;
+  const cardInsertLineIdx = computeCardInsertLineIdx(
+    dragState, filter.displayOrder, renderItems, sourceGroupId,
   );
+  const ghds = groupHeaderDragState;
+  const groupInsertLineIdx = computeGroupInsertLineIdx(ghds, filter.displayOrder, renderItems);
+  const groupDragCardInsertLineIdx = computeGroupDragCardInsertLineIdx(ghds, renderItems);
+
+  // Card-drag insertion line indentation: indented (ml-6) when
+  // dragging within the source card's own group. Full-width when
+  // dragging to exit the group or when the card is ungrouped.
+  const cardLineIndented = lineIndented;
 
   // ── Main render ──────────────────────────────────────────────────────────
   return (
@@ -714,7 +728,7 @@ export default function ModList({ saving, onSelectMod }: Props) {
             <p className="text-sm text-slate-500 text-center py-8">没有匹配的 Mod</p>
           ) : (
             renderItems.map((item, index) => {
-              // Group creation placeholder — thin insertion line
+              // Group creation placeholder — yellow insertion line
               if (item.type === "group-creation-placeholder") {
                 return (
                   <div key="group-create-placeholder" className="relative h-0 z-20">
@@ -740,6 +754,7 @@ export default function ModList({ saving, onSelectMod }: Props) {
                     )}
                     <ModGroupHeader
                       group={group}
+                      modCount={groupModCounts.get(group.id) ?? 0}
                       isEditing={editingGroupId === group.id}
                       isDragging={
                         !!(groupHeaderDragState?.started &&
@@ -754,7 +769,7 @@ export default function ModList({ saving, onSelectMod }: Props) {
                         e.preventDefault();
                         setContextMenu({ type: "group", groupId, x: e.clientX, y: e.clientY });
                       }}
-                      onStartEdit={setEditingGroupId}
+                      onStartEdit={(id) => { clearSelection(); setEditingGroupId(id); }}
                       onStopEdit={() => setEditingGroupId(null)}
                     />
                   </div>
@@ -805,15 +820,18 @@ export default function ModList({ saving, onSelectMod }: Props) {
                       onDoubleClick={() => handleModDoubleClick(item.key)}
                       onOrderUp={(e) => {
                         e.stopPropagation();
+                        clearSelection();
                         setModOrder(item.key, mod.order + 1);
                         setDirty(true);
                       }}
                       onOrderDown={(e) => {
                         e.stopPropagation();
+                        clearSelection();
                         setModOrder(item.key, Math.max(0, mod.order - 1));
                         setDirty(true);
                       }}
                       onOrderChange={(order) => handleOrderChange(item.key, order)}
+                      onOrderFocus={() => clearSelection()}
                       onDragMouseDown={handleDragMouseDown}
                       isDragging={dragging}
                       isDragOver={false}
@@ -863,10 +881,12 @@ export default function ModList({ saving, onSelectMod }: Props) {
             onSendToGroup={handleSendToGroup}
             onCreateGroupAndSend={handleCreateGroupAndSend}
             onOrderUp={() => {
+              clearSelection();
               setModOrder(contextMenu.key, Math.max(0, mod.order - 1));
               setDirty(true);
             }}
             onOrderDown={() => {
+              clearSelection();
               setModOrder(contextMenu.key, mod.order + 1);
               setDirty(true);
             }}

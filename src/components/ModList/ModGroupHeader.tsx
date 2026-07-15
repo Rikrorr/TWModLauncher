@@ -2,6 +2,7 @@ import type { ModGroup } from "../../lib/types";
 
 interface Props {
   group: ModGroup;
+  modCount: number;
   isEditing: boolean;
   isDragging: boolean;
   dragOverGroupId: string | null;
@@ -16,6 +17,7 @@ interface Props {
 
 export default function ModGroupHeader({
   group,
+  modCount,
   isEditing,
   isDragging,
   dragOverGroupId,
@@ -35,6 +37,9 @@ export default function ModGroupHeader({
       onMouseDown={(e) => {
         const target = e.target as HTMLElement;
         if (target.closest("button, input, label, select")) return;
+        // Don't start drag while editing group name — let the click/blur
+        // events handle focus change and save the rename naturally.
+        if (isEditing) return;
         onDragMouseDown(e, group.id);
       }}
       onContextMenu={(e) => {
@@ -66,18 +71,16 @@ export default function ModGroupHeader({
             onStopEdit();
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            if (e.key === "Enter" || e.key === "Escape") {
               const val = (e.target as HTMLInputElement).value.trim();
               onRename(group.id, val || "未命名分组");
-              onStopEdit();
-            } else if (e.key === "Escape") {
               onStopEdit();
             }
           }}
           onClick={(e) => e.stopPropagation()}
           className="text-sm font-medium text-blue-300 bg-blue-950/50
                      border border-blue-600 rounded px-1 outline-none
-                     min-w-[6em] w-auto"
+                     min-w-[6em] w-auto select-text"
         />
       ) : (
         <span
@@ -92,7 +95,7 @@ export default function ModGroupHeader({
       )}
 
       {/* Mod count */}
-      <span className="text-xs text-slate-500">({group.modKeys.length})</span>
+      <span className="text-xs text-slate-500">({modCount})</span>
 
       {/* Delete */}
       <button

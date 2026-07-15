@@ -33,6 +33,57 @@ function loadPrefs(): CachedPrefs | null {
   }
 }
 
+/** Migrate old-format displayOrder (mod keys only) to unified format
+ *  (mod keys + group IDs interleaved). Returns null if no migration needed. */
+function migrateDisplayOrder(): string[] | null {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return null;
+    const prefs = JSON.parse(raw);
+    const oldOrder: string[] | undefined = prefs.displayOrder;
+    const groups: { id: string; modKeys: string[] }[] | undefined = prefs.groups;
+    if (!oldOrder || !groups || groups.length === 0) return null;
+
+    // Check if migration is needed: any group ID already in displayOrder?
+    const groupIdSet = new Set(groups.map((g) => g.id));
+    const hasGroupIds = oldOrder.some((k) => groupIdSet.has(k));
+    if (hasGroupIds) return null; // Already migrated
+
+    // Build map from group ID to first member's index in displayOrder
+    const groupPositions: { gid: string; insertAt: number }[] = [];
+    for (const g of groups) {
+      let firstIdx = oldOrder.length;
+      for (const mk of g.modKeys) {
+        const idx = oldOrder.indexOf(mk);
+        if (idx !== -1 && idx < firstIdx) firstIdx = idx;
+      }
+      if (firstIdx < oldOrder.length) {
+        groupPositions.push({ gid: g.id, insertAt: firstIdx });
+      } else {
+        // Empty group or all members missing — put at end
+        groupPositions.push({ gid: g.id, insertAt: oldOrder.length + groupPositions.length });
+      }
+    }
+
+    // Sort by insertAt descending so later inserts don't shift earlier ones
+    groupPositions.sort((a, b) => b.insertAt - a.insertAt);
+
+    const migrated = [...oldOrder];
+    for (const { gid, insertAt } of groupPositions) {
+      migrated.splice(Math.min(insertAt, migrated.length), 0, gid);
+    }
+
+    console.info(
+      "[migrate] unified displayOrder: merged",
+      groupPositions.length,
+      "groups into displayOrder",
+    );
+    return migrated;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
 export function useModListState(mods: ModInfo[]) {
@@ -75,20 +126,30 @@ export function useModListState(mods: ModInfo[]) {
     return cached?.viewMode ?? "detailed";
   });
 
-  // Display order (custom card ordering)
+  // Display order (custom ordering — mod keys + group IDs interleaved)
   const [displayOrder, setDisplayOrder] = useState<string[]>(() => {
+    const migrated = migrateDisplayOrder();
+    if (migrated) return migrated;
     const cached = loadPrefs();
     return cached?.displayOrder ?? [];
   });
 
-  // Sync displayOrder when mods change
+  // Sync displayOrder when mods change.
+  // Only operates on mod keys — group IDs are preserved as-is.
   useEffect(() => {
     setDisplayOrder((prev) => {
-      const allKeys = mods.map((m) => `${m.source}_${m.fileId}`);
-      if (allKeys.length === 0) return prev;
-      const filtered = prev.filter((k) => allKeys.includes(k));
+      const allModKeys = new Set(mods.map((m) => `${m.source}_${m.fileId}`));
+      if (allModKeys.size === 0) return prev;
+      // Filter out stale mod keys, keep group IDs and valid mod keys
+      const filtered = prev.filter((k) => {
+        // Group IDs start with a dash or are UUID format — they don't contain underscore
+        // like mod keys ("source_fileId")
+        if (!k.includes("_")) return true; // group ID, keep
+        return allModKeys.has(k); // mod key, keep if still exists
+      });
+      // Append new mod keys not yet in the list
       const existing = new Set(filtered);
-      for (const k of allKeys) {
+      for (const k of allModKeys) {
         if (!existing.has(k)) filtered.push(k);
       }
       if (
@@ -129,23 +190,6 @@ export function useModListState(mods: ModInfo[]) {
     }
     return () => document.removeEventListener("mousedown", handler);
   }, [catDropdownOpen, tagDropdownOpen]);
-
-  // Persist filter prefs
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        PREFS_KEY,
-        JSON.stringify({
-          activeCategories: [...activeCategories],
-          tagMode,
-          viewMode,
-          displayOrder,
-        }),
-      );
-    } catch {
-      /* quota exceeded — ignore */
-    }
-  }, [activeCategories, tagMode, viewMode, displayOrder]);
 
   return {
     // Search

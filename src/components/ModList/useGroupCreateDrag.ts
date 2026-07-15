@@ -1,31 +1,30 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ModGroup } from "../../lib/types";
 import { createLogger } from "../../lib/logger";
+import { useModStore } from "../../store/useModStore";
 import {
   snapshotDragPositions,
+  DRAG_THRESHOLD,
   type DragRefs,
   type GroupCreateDragState,
 } from "./utils";
 
 const log = createLogger("useGroupCreateDrag");
-const GROUP_DRAG_THRESHOLD = 5;
 
 interface UseGroupCreateDragParams {
   setGroups: React.Dispatch<React.SetStateAction<ModGroup[]>>;
-  setGroupOrder: React.Dispatch<React.SetStateAction<string[]>>;
+  setDisplayOrder: React.Dispatch<React.SetStateAction<string[]>>;
   setEditingGroupId: React.Dispatch<React.SetStateAction<string | null>>;
   modGroupMapRef: React.MutableRefObject<Map<string, string>>;
-  groupOrderRef: React.MutableRefObject<string[]>;
   groups: ModGroup[];
   refs: DragRefs;
 }
 
 export function useGroupCreateDrag({
   setGroups,
-  setGroupOrder,
+  setDisplayOrder,
   setEditingGroupId,
   modGroupMapRef,
-  groupOrderRef,
   groups,
   refs,
 }: UseGroupCreateDragParams) {
@@ -36,17 +35,17 @@ export function useGroupCreateDrag({
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
+      // Clear multi-selection when dragging to create a new group
+      useModStore.getState().clearSelection();
       snapshotDragPositions(refs, groups);
       setState({
         active: false,
         startY: e.clientY,
-        slotY: e.clientY,
         insertAfter: null,
         insertBefore: null,
-        groupOrderIdx: groupOrderRef.current.length,
       });
     },
-    [refs, groups, groupOrderRef],
+    [refs, groups],
   );
 
   useEffect(() => {
@@ -55,7 +54,7 @@ export function useGroupCreateDrag({
       if (!gc) return;
 
       const dy = Math.abs(e.clientY - gc.startY);
-      if (!gc.active && dy < GROUP_DRAG_THRESHOLD) return;
+      if (!gc.active && dy < DRAG_THRESHOLD) return;
 
       const container = refs.scrollContainerRef.current;
       const scrollDelta = container ? container.scrollTop - refs.scrollSnapshotRef.current : 0;
@@ -64,58 +63,83 @@ export function useGroupCreateDrag({
       const gHeaders = refs.groupHeaderPositionsRef.current;
       const currentGroupMap = modGroupMapRef.current;
 
-      // Find closest UNGROUPED card
-      let closestKey: string | null = null;
-      let closestDist = Infinity;
+      // Build combined visual items: ungrouped cards + group headers.
+      // Group headers are included so gaps between adjacent collapsed/empty
+      // groups are valid insertion points.
+      interface VisualItem {
+        key: string;
+        top: number;
+        bottom: number;
+        midY: number;
+      }
+
+      const visualItems: VisualItem[] = [];
+
+      // Ungrouped card positions
       positions.forEach((pos, k) => {
         if (currentGroupMap.has(k)) return;
-        const adjustedMidY = pos.midY - scrollDelta;
-        const dist = Math.abs(e.clientY - adjustedMidY);
-        if (dist < closestDist) {
-          closestDist = dist;
-          closestKey = k;
-        }
+        visualItems.push({
+          key: k,
+          top: pos.top - scrollDelta,
+          bottom: pos.top + pos.height - scrollDelta,
+          midY: pos.midY - scrollDelta,
+        });
       });
 
-      let insertAfter: string | null = null;
-      let slotY = e.clientY;
-      if (closestKey) {
-        const pos = positions.get(closestKey)!;
-        const adjustedMidY = pos.midY - scrollDelta;
-        const adjustedTop = pos.top - scrollDelta;
-        const adjustedBottom = pos.top + pos.height - scrollDelta;
-        const above = e.clientY < adjustedMidY;
-        insertAfter = above ? null : closestKey;
-        slotY = above ? adjustedTop : adjustedBottom;
-      }
+      // Group header positions
+      gHeaders.forEach((gh, gid) => {
+        const headerTop = gh.top - scrollDelta;
+        const headerBottom = gh.bottom - scrollDelta;
+        visualItems.push({
+          key: gid,
+          top: headerTop,
+          bottom: headerBottom,
+          midY: (headerTop + headerBottom) / 2,
+        });
+      });
 
-      let goIdx = groupOrderRef.current.length;
-      for (let i = 0; i < groupOrderRef.current.length; i++) {
-        const gid = groupOrderRef.current[i];
-        const gh = gHeaders.get(gid);
-        if (gh && e.clientY < gh.bottom - scrollDelta) {
-          goIdx = i;
-          break;
+      visualItems.sort((a, b) => a.top - b.top);
+
+      let insertAfter: string | null = null;
+      let insertBefore: string | null = null;
+
+      if (visualItems.length > 0) {
+        const first = visualItems[0];
+        const last = visualItems[visualItems.length - 1];
+
+        if (e.clientY < first.midY) {
+          insertBefore = first.key;
+        } else if (e.clientY >= last.midY) {
+          insertAfter = last.key;
+        } else {
+          for (let i = 0; i < visualItems.length - 1; i++) {
+            const curr = visualItems[i];
+            const next = visualItems[i + 1];
+            if (e.clientY >= curr.midY && e.clientY < next.midY) {
+              const gapMid = (curr.bottom + next.top) / 2;
+              if (e.clientY < gapMid) {
+                insertAfter = curr.key;
+              } else {
+                insertBefore = next.key;
+              }
+              break;
+            }
+          }
         }
       }
-
-      const insertBefore = closestKey && !insertAfter ? closestKey : null;
 
       const changed =
         !gc.active ||
         gc.insertAfter !== insertAfter ||
-        gc.insertBefore !== insertBefore ||
-        gc.groupOrderIdx !== goIdx;
+        gc.insertBefore !== insertBefore;
 
       if (changed) {
-        log.debug(`[group-create] mousemove closestKey=${closestKey} insertAfter=${insertAfter} goIdx=${goIdx}`);
+        log.info(`[group-create] mousemove insertAfter=${insertAfter ?? "null"} insertBefore=${insertBefore ?? "null"} active=${gc.active}`);
         setState({
           active: true,
           startY: gc.startY,
-          slotY,
           insertAfter,
           insertBefore,
-          groupOrderIdx: goIdx,
         });
       }
     };
@@ -123,28 +147,35 @@ export function useGroupCreateDrag({
     const handleMouseUp = () => {
       const gc = stateRef.current;
       if (!gc) return;
-      log.debug(`[group-create] mouseup active=${gc.active} insertAfter=${gc.insertAfter}`);
+      log.info(`[group-create] mouseup active=${gc.active} insertAfter=${gc.insertAfter ?? "null"} insertBefore=${gc.insertBefore ?? "null"}`);
 
       const newGroup: ModGroup = {
         id: crypto.randomUUID(),
         name: "新建分组",
         collapsed: false,
         modKeys: [],
-        anchorBefore: gc.insertBefore ?? undefined,
-        anchorAfter: gc.insertAfter ?? undefined,
       };
 
       setState(null);
       setGroups((prev) => [...prev, newGroup]);
 
-      if (gc.active) {
-        setGroupOrder((prev) => {
+      // Insert group ID into unified displayOrder at the correct position
+      if (gc.active && gc.insertBefore) {
+        setDisplayOrder((prev) => {
+          const idx = prev.indexOf(gc.insertBefore!);
           const next = [...prev];
-          next.splice(gc.groupOrderIdx, 0, newGroup.id);
+          next.splice(idx === -1 ? prev.length : idx, 0, newGroup.id);
+          return next;
+        });
+      } else if (gc.active && gc.insertAfter) {
+        setDisplayOrder((prev) => {
+          const idx = prev.indexOf(gc.insertAfter!);
+          const next = [...prev];
+          next.splice(idx === -1 ? prev.length : idx + 1, 0, newGroup.id);
           return next;
         });
       } else {
-        setGroupOrder((prev) => [newGroup.id, ...prev]);
+        setDisplayOrder((prev) => [...prev, newGroup.id]);
       }
 
       setTimeout(() => setEditingGroupId(newGroup.id), 0);
@@ -156,7 +187,7 @@ export function useGroupCreateDrag({
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- always mounted, lightweight early return when state is null
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     groupCreateState: state,

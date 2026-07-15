@@ -1,19 +1,34 @@
 import { create } from "zustand";
 import type { ModGroup } from "../lib/types";
 
-function loadInitialGroups(): { groups: ModGroup[]; groupOrder: string[] } {
+function loadInitialGroups(): ModGroup[] {
   try {
     const raw = localStorage.getItem("twm-filter-prefs");
     if (raw) {
       const prefs = JSON.parse(raw);
-      const groups: ModGroup[] = prefs.groups ?? [];
-      const groupOrder: string[] = prefs.groupOrder ?? groups.map((g) => g.id);
-      return { groups, groupOrder };
+      const rawGroups: ModGroup[] = prefs.groups ?? [];
+      // Deduplicate within each group.
+      const dedupedGroups: ModGroup[] = rawGroups.map((g) => ({
+        ...g,
+        modKeys: [...new Set(g.modKeys)],
+      }));
+      // Cross-deduplicate across groups: if a modKey appears in multiple
+      // groups, keep it only in the first group encountered.
+      const seenKeys = new Set<string>();
+      const crossGroups: ModGroup[] = dedupedGroups.map((g) => {
+        const cleaned = g.modKeys.filter((mk) => {
+          if (seenKeys.has(mk)) return false;
+          seenKeys.add(mk);
+          return true;
+        });
+        return cleaned.length === g.modKeys.length ? g : { ...g, modKeys: cleaned };
+      });
+      return crossGroups;
     }
   } catch {
     // Ignore parse errors
   }
-  return { groups: [], groupOrder: [] };
+  return [];
 }
 
 const initialGroups = loadInitialGroups();
@@ -31,10 +46,8 @@ interface AppState {
   lastMessage: string | null;
   /** Raw ModSettings.Lua content used as template for patching */
   templateRaw: string;
-  /** Virtual mod groups */
+  /** Virtual mod groups (order is determined by displayOrder) */
   groups: ModGroup[];
-  /** Visual order of group IDs */
-  groupOrder: string[];
   /** True when in-memory mod state differs from what's on disk */
   isDirty: boolean;
   /** Mod keys with unsaved per-mod Settings.Lua changes */
@@ -46,7 +59,6 @@ interface AppState {
   setLastMessage: (msg: string | null) => void;
   setTemplateRaw: (raw: string) => void;
   setGroups: (groups: ModGroup[] | ((prev: ModGroup[]) => ModGroup[])) => void;
-  setGroupOrder: (order: string[] | ((prev: string[]) => string[])) => void;
   clearPath: () => void;
   setDirty: (v: boolean) => void;
   addDirtyModSetting: (key: string) => void;
@@ -61,8 +73,7 @@ export const useAppStore = create<AppState>((set) => ({
   error: null,
   lastMessage: null,
   templateRaw: "",
-  groups: initialGroups.groups,
-  groupOrder: initialGroups.groupOrder,
+  groups: initialGroups,
   isDirty: false,
   dirtyModSettings: [],
 
@@ -73,7 +84,6 @@ export const useAppStore = create<AppState>((set) => ({
   setLastMessage: (msg) => set({ lastMessage: msg }),
   setTemplateRaw: (raw) => set({ templateRaw: raw }),
   setGroups: (groups) => set((state) => ({ groups: typeof groups === "function" ? groups(state.groups) : groups })),
-  setGroupOrder: (groupOrder) => set((state) => ({ groupOrder: typeof groupOrder === "function" ? groupOrder(state.groupOrder) : groupOrder })),
   clearPath: () =>
     set({ gamePath: null, pathSource: "none", error: null, dirtyModSettings: [] }),
   setDirty: (v) => set({ isDirty: v }),

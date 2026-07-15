@@ -6,15 +6,13 @@ import type { ModInfo, ModGroup } from "../../lib/types";
 export type RenderItem =
   | { type: "group-header"; group: ModGroup }
   | { type: "mod"; mod: ModInfo; key: string; indented: boolean }
-  | { type: "group-creation-placeholder"; group: null };
+  | { type: "group-creation-placeholder"; };
 
 export interface GroupCreateDragState {
   active: boolean;
   startY: number;
-  slotY: number;
   insertAfter: string | null;
   insertBefore: string | null;
-  groupOrderIdx: number;
 }
 
 export interface CardDragState {
@@ -23,17 +21,12 @@ export interface CardDragState {
   currentIdx: number;
   startY: number;
   started: boolean;
-  slotBeforeGroupId?: string;
-  sourceGroupId?: string;
-  exitingGroup?: 'top' | 'bottom';
   /** True when dragging a multi-selected card → all selected move together */
   multiDrag?: boolean;
   /** All mod keys being moved in this multi-drag */
   multiDragKeys?: string[];
   /** First index of the multi-drag block in displayOrder */
   multiDragMinIdx?: number;
-  /** Last index of the multi-drag block in displayOrder */
-  multiDragMaxIdx?: number;
 }
 
 export interface GroupHeaderDragState {
@@ -43,7 +36,6 @@ export interface GroupHeaderDragState {
   startY: number;
   started: boolean;
   slotBeforeKey?: string;
-  insertAfter?: boolean;
 }
 
 /** Shared DOM refs used across all drag systems. */
@@ -67,15 +59,14 @@ export interface DragRefs {
 // ─── buildRenderItems ────────────────────────────────────────────────────────
 
 /**
- * Build a flat RenderItem array that represents the visual ordering of the
- * mod list. Groups are interleaved with ungrouped mods based on displayOrder:
- * when the first member of a group is encountered, the group header and all
- * its members are emitted contiguously at that position.
+ * Build a flat RenderItem array from the unified displayOrder.
+ * displayOrder contains both mod keys and group IDs interleaved.
+ * Group IDs trigger emission of the group header + all members.
+ * Grouped mod keys are skipped (they render with their group).
  */
 export function buildRenderItems(
   displayOrder: string[],
   groups: ModGroup[],
-  groupOrder: string[],
   filtered: ModInfo[],
   modGroupMap: Map<string, string>,
   groupCreateState: GroupCreateDragState | null,
@@ -83,23 +74,49 @@ export function buildRenderItems(
   const renderedModKeys = new Set<string>();
   const renderedGroupIds = new Set<string>();
   const items: RenderItem[] = [];
+  const groupMap = new Map(groups.map((g) => [g.id, g]));
 
-  // Walk displayOrder — first-encounter triggers full group emission
-  for (const key of displayOrder) {
-    if (renderedModKeys.has(key)) continue;
+  // Walk displayOrder linearly
+  for (const entry of displayOrder) {
+    const group = groupMap.get(entry);
+    if (group) {
+      // Group ID → emit header + all members
+      if (renderedGroupIds.has(entry)) continue;
+      renderedGroupIds.add(entry);
+      items.push({ type: "group-header", group });
 
-    const gid = modGroupMap.get(key);
-    if (gid && !renderedGroupIds.has(gid)) {
-      emitGroup(gid, displayOrder, groups, groupOrder, filtered, modGroupMap, items, renderedModKeys, renderedGroupIds);
-      continue;
-    }
-
-    // Ungrouped card
-    if (!renderedModKeys.has(key)) {
-      const mod = filtered.find((m) => `${m.source}_${m.fileId}` === key);
+      if (!group.collapsed) {
+        // Emit members sorted by displayOrder position, falling back to modKeys order
+        const sorted = group.modKeys
+          .map((k) => ({
+            key: k,
+            mod: filtered.find((m) => `${m.source}_${m.fileId}` === k),
+          }))
+          .filter((x): x is { key: string; mod: ModInfo } => x.mod != null)
+          .sort((a, b) => {
+            const ia = displayOrder.indexOf(a.key);
+            const ib = displayOrder.indexOf(b.key);
+            return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib);
+          });
+        for (const { key: mk, mod } of sorted) {
+          if (!renderedModKeys.has(mk)) {
+            items.push({ type: "mod", mod, key: mk, indented: true });
+            renderedModKeys.add(mk);
+          }
+        }
+      } else {
+        for (const mk of group.modKeys) renderedModKeys.add(mk);
+      }
+    } else if (!renderedModKeys.has(entry)) {
+      // Mod key — emit if not already rendered as part of a group
+      const mod = filtered.find((m) => `${m.source}_${m.fileId}` === entry);
       if (mod) {
-        items.push({ type: "mod", mod, key, indented: false });
-        renderedModKeys.add(key);
+        const gid = modGroupMap.get(entry);
+        // If this mod is in a group whose ID hasn't been rendered yet,
+        // skip — it will render when the group is encountered.
+        if (gid && !renderedGroupIds.has(gid)) continue;
+        items.push({ type: "mod", mod, key: entry, indented: !!gid });
+        renderedModKeys.add(entry);
       }
     }
   }
@@ -110,142 +127,66 @@ export function buildRenderItems(
     if (renderedModKeys.has(key)) continue;
     const gid = modGroupMap.get(key);
     if (gid && !renderedGroupIds.has(gid)) {
-      emitGroup(gid, displayOrder, groups, groupOrder, filtered, modGroupMap, items, renderedModKeys, renderedGroupIds);
+      // Group not yet rendered — emit it now
+      const group = groupMap.get(gid);
+      if (group) {
+        renderedGroupIds.add(gid);
+        items.push({ type: "group-header", group });
+        if (!group.collapsed) {
+          for (const mk of group.modKeys) {
+            if (renderedModKeys.has(mk)) continue;
+            const m = filtered.find((fm) => `${fm.source}_${fm.fileId}` === mk);
+            if (m) {
+              items.push({ type: "mod", mod: m, key: mk, indented: true });
+              renderedModKeys.add(mk);
+            }
+          }
+        } else {
+          for (const mk of group.modKeys) renderedModKeys.add(mk);
+        }
+      }
     }
     if (!renderedModKeys.has(key)) {
-      items.push({ type: "mod", mod, key, indented: false });
+      items.push({ type: "mod", mod, key, indented: !!gid });
       renderedModKeys.add(key);
     }
   }
 
-  // Interpolate unrendered top-level groups
-  interpolateUnrenderedGroups(groupOrder, groups, items, renderedGroupIds);
+  // Remaining groups not in displayOrder (e.g., from old-format data)
+  for (const g of groups) {
+    if (!renderedGroupIds.has(g.id)) {
+      renderedGroupIds.add(g.id);
+      items.push({ type: "group-header", group: g });
+      if (!g.collapsed) {
+        const sorted = g.modKeys
+          .map((k) => ({
+            key: k,
+            mod: filtered.find((m) => `${m.source}_${m.fileId}` === k),
+          }))
+          .filter((x): x is { key: string; mod: ModInfo } => x.mod != null)
+          .sort((a, b) => {
+            const ia = displayOrder.indexOf(a.key);
+            const ib = displayOrder.indexOf(b.key);
+            return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib);
+          });
+        for (const { key: mk, mod } of sorted) {
+          if (!renderedModKeys.has(mk)) {
+            items.push({ type: "mod", mod, key: mk, indented: true });
+            renderedModKeys.add(mk);
+          }
+        }
+      } else {
+        for (const mk of g.modKeys) renderedModKeys.add(mk);
+      }
+    }
+  }
 
-  // Group creation placeholder
+  // Group creation placeholder — yellow line between cards/groups
   if (groupCreateState?.active) {
     insertGroupCreationPlaceholder(items, groupCreateState);
   }
 
   return items;
-}
-
-function emitGroup(
-  gid: string,
-  displayOrder: string[],
-  groups: ModGroup[],
-  groupOrder: string[],
-  filtered: ModInfo[],
-  _modGroupMap: Map<string, string>,
-  items: RenderItem[],
-  renderedModKeys: Set<string>,
-  renderedGroupIds: Set<string>,
-): void {
-  const group = groups.find((g) => g.id === gid);
-  if (!group || !groupOrder.includes(group.id)) return;
-  renderedGroupIds.add(gid);
-
-  items.push({ type: "group-header", group });
-
-  if (!group.collapsed) {
-    const sorted = group.modKeys
-      .map((k) => ({
-        key: k,
-        mod: filtered.find((m) => `${m.source}_${m.fileId}` === k),
-      }))
-      .filter((x): x is { key: string; mod: ModInfo } => x.mod != null)
-      .sort((a, b) => {
-        const ia = displayOrder.indexOf(a.key);
-        const ib = displayOrder.indexOf(b.key);
-        return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib);
-      });
-    for (const { key: mk, mod } of sorted) {
-      if (!renderedModKeys.has(mk)) {
-        items.push({ type: "mod", mod, key: mk, indented: true });
-        renderedModKeys.add(mk);
-      }
-    }
-  } else {
-    for (const mk of group.modKeys) renderedModKeys.add(mk);
-  }
-}
-
-function interpolateUnrenderedGroups(
-  groupOrder: string[],
-  groups: ModGroup[],
-  items: RenderItem[],
-  renderedGroupIds: Set<string>,
-): void {
-  for (let gi = 0; gi < groupOrder.length; gi++) {
-    const gid = groupOrder[gi];
-    if (renderedGroupIds.has(gid)) continue;
-    const group = groups.find((g) => g.id === gid);
-    if (!group) continue;
-
-    let insertAt: number;
-    if (group.anchorBefore) {
-      const idx = items.findIndex(
-        (item) => item.type === "mod" && item.key === group.anchorBefore,
-      );
-      if (idx !== -1) {
-        insertAt = idx;
-      } else if (group.anchorAfter) {
-        // anchorBefore is stale — try anchorAfter instead
-        const idx2 = items.findIndex(
-          (item) => item.type === "mod" && item.key === group.anchorAfter,
-        );
-        insertAt = idx2 === -1 ? 0 : idx2 + 1;
-      } else {
-        insertAt = 0;
-      }
-    } else if (group.anchorAfter) {
-      const idx = items.findIndex(
-        (item) => item.type === "mod" && item.key === group.anchorAfter,
-      );
-      if (idx !== -1) {
-        insertAt = idx + 1;
-      } else if (group.anchorBefore) {
-        // anchorAfter is stale — try anchorBefore instead
-        const idx2 = items.findIndex(
-          (item) => item.type === "mod" && item.key === group.anchorBefore,
-        );
-        insertAt = idx2 === -1 ? items.length : idx2;
-      } else {
-        insertAt = items.length;
-      }
-    } else if (groupOrder.length === 1) {
-      insertAt = 0;
-    } else {
-      // Try to find the next rendered sibling group to insert before
-      insertAt = -1;
-      for (let gj = gi + 1; gj < groupOrder.length; gj++) {
-        const nextIdx = items.findIndex(
-          (item) =>
-            item.type === "group-header" && item.group.id === groupOrder[gj],
-        );
-        if (nextIdx !== -1) {
-          insertAt = nextIdx;
-          break;
-        }
-      }
-      // If no sibling after, try to find sibling before and insert after it
-      if (insertAt === -1) {
-        for (let gj = gi - 1; gj >= 0; gj--) {
-          const prevIdx = items.findIndex(
-            (item) =>
-              item.type === "group-header" && item.group.id === groupOrder[gj],
-          );
-          if (prevIdx !== -1) {
-            insertAt = prevIdx + 1;
-            break;
-          }
-        }
-      }
-      if (insertAt === -1) insertAt = items.length;
-    }
-
-    items.splice(insertAt, 0, { type: "group-header", group });
-    renderedGroupIds.add(gid);
-  }
 }
 
 function insertGroupCreationPlaceholder(
@@ -255,18 +196,22 @@ function insertGroupCreationPlaceholder(
   let idx: number;
   if (state.insertBefore) {
     const found = items.findIndex(
-      (item) => item.type === "mod" && item.key === state.insertBefore,
+      (item) =>
+        (item.type === "mod" && item.key === state.insertBefore) ||
+        (item.type === "group-header" && item.group.id === state.insertBefore),
     );
     idx = found === -1 ? 0 : found;
   } else if (state.insertAfter) {
     const found = items.findIndex(
-      (item) => item.type === "mod" && item.key === state.insertAfter,
+      (item) =>
+        (item.type === "mod" && item.key === state.insertAfter) ||
+        (item.type === "group-header" && item.group.id === state.insertAfter),
     );
     idx = found === -1 ? items.length : found + 1;
   } else {
-    idx = 0;
+    idx = items.length;
   }
-  items.splice(idx, 0, { type: "group-creation-placeholder", group: null });
+  items.splice(idx, 0, { type: "group-creation-placeholder" });
 }
 
 // ─── Insertion-line computation ──────────────────────────────────────────────
@@ -280,52 +225,74 @@ function insertGroupCreationPlaceholder(
 export function computeCardInsertLineIdx(
   dragState: CardDragState | null,
   displayOrder: string[],
-  dragOverGroupId: string | null,
   items: RenderItem[],
+  sourceGroupId?: string | null,
 ): number {
   if (!dragState?.started) return -1;
-  // Suppress line when entering a group (cross-group or ungrouped→group).
-  // Only same-group reorder shows the position line.
-  if (dragOverGroupId && dragOverGroupId !== dragState.sourceGroupId) return -1;
 
-  if (dragState.slotBeforeGroupId) {
-    return items.findIndex(
-      (item) =>
-        item.type === "group-header" &&
-        item.group.id === dragState.slotBeforeGroupId,
-    );
+  // No real movement in displayOrder
+  if (dragState.currentIdx === dragState.sourceIdx) {
+    return -1;
   }
 
-  // Suppress no-op moves: after splice-and-reinsert in mouseup,
-  // targetIdx === sourceIdx and targetIdx === sourceIdx + 1 both
-  // result in the card landing at its original position.
-  const noOp = dragState.currentIdx === dragState.sourceIdx || dragState.currentIdx === dragState.sourceIdx + 1;
-  // exitingGroup overrides no-op suppression — the card IS making a
-  // meaningful move out of its group even if the displayOrder index
-  // doesn't change.
-  if (!noOp || dragState.exitingGroup) {
-    // When exiting from the top, show the line before the source group
-    // header (in renderItems), not before the dragged card itself (which
-    // sits inside the group below the header).
-    if (dragState.exitingGroup === 'top') {
-      const groupHeaderIdx = items.findIndex(
-        (item) => item.type === "group-header" && item.group.id === dragState.sourceGroupId,
-      );
-      if (groupHeaderIdx !== -1) return groupHeaderIdx;
+  // Insert after the last card
+  if (dragState.currentIdx >= displayOrder.length) {
+    return items.length;
+  }
+  const targetKey = displayOrder[dragState.currentIdx];
+  if (!targetKey) return -1;
+
+  let targetIdx = items.findIndex(
+    (item) =>
+      (item.type === "mod" && item.key === targetKey) ||
+      (item.type === "group-header" && item.group.id === targetKey),
+  );
+
+  if (targetIdx === -1) return -1;
+
+  // When dragging within a group and the target is outside the source group,
+  // position the blue line after the last card in the source group instead.
+  if (sourceGroupId) {
+    let inSource = false;
+    let lastSourceIdx = -1;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type === "group-header") {
+        inSource = item.group.id === sourceGroupId;
+      } else if (item.type === "mod") {
+        if (inSource && item.indented) {
+          lastSourceIdx = i;
+        } else if (inSource && !item.indented) {
+          // Left the source group into ungrouped territory
+          inSource = false;
+        }
+      }
     }
-    // Insert after the last card
-    if (dragState.currentIdx >= displayOrder.length) {
-      return items.length;
-    }
-    const targetKey = displayOrder[dragState.currentIdx];
-    if (targetKey) {
-      return items.findIndex(
-        (item) => item.type === "mod" && item.key === targetKey,
-      );
+    // If target is past/outside the source group while the source card
+    // is still inside it, show the line at end-of-group.
+    if (lastSourceIdx >= 0 && targetIdx > lastSourceIdx) {
+      // Check whether the target item is visually inside the source group.
+      // Ungrouped mods (indented=false) are never in any group.
+      let targetInSourceGroup = false;
+      const targetItem = items[targetIdx];
+      if (targetItem?.type === "mod" && targetItem.indented) {
+        for (let i = targetIdx - 1; i >= 0; i--) {
+          const it = items[i];
+          if (it.type === "group-header") {
+            targetInSourceGroup = it.group.id === sourceGroupId;
+            break;
+          }
+        }
+      } else if (targetItem?.type === "group-header") {
+        targetInSourceGroup = targetItem.group.id === sourceGroupId;
+      }
+      if (!targetInSourceGroup) {
+        return lastSourceIdx + 1;
+      }
     }
   }
 
-  return -1;
+  return targetIdx;
 }
 
 /**
@@ -335,57 +302,33 @@ export function computeCardInsertLineIdx(
  */
 export function computeGroupInsertLineIdx(
   ghds: GroupHeaderDragState | null,
-  groupOrder: string[],
+  displayOrder: string[],
   items: RenderItem[],
 ): number {
   if (!ghds?.started) return -1;
 
-  // No-op: sourceIdx === currentIdx or sourceIdx + 1 === currentIdx
-  // (after splice removal, both result in the same position)
+  // No-op detection
   if (ghds.sourceIdx === ghds.currentIdx || ghds.sourceIdx + 1 === ghds.currentIdx) return -1;
 
-  const targetGid = groupOrder[ghds.currentIdx];
-  if (!targetGid) return -1;
+  const targetKey = displayOrder[ghds.currentIdx];
+  if (!targetKey) return -1;
 
   return items.findIndex(
-    (item) => item.type === "group-header" && item.group.id === targetGid,
+    (item) =>
+      (item.type === "mod" && item.key === targetKey) ||
+      (item.type === "group-header" && item.group.id === targetKey),
   );
 }
 
 /**
- * Compute the card-level insertion-line position for group header drag
- * (moving group cards between ungrouped cards).
- * Returns the renderItems index *before which* the line should appear.
- * Returns -1 when no line should be shown.
+ * Compute the card-level insertion line for group header drag
+ * (when a group's cards are extracted between ungrouped cards).
  */
 export function computeGroupDragCardInsertLineIdx(
   ghds: GroupHeaderDragState | null,
   items: RenderItem[],
-  displayOrder?: string[],
-  groups?: ModGroup[],
 ): number {
-  if (!ghds?.slotBeforeKey || !displayOrder || !groups) return -1;
-
-  // No-op detection: check if slotBeforeKey is already adjacent to the
-  // source group's cards in the direction the drag would move them.
-  const sourceGroup = groups.find((g) => g.id === ghds.sourceGroupId);
-  if (sourceGroup && sourceGroup.modKeys.length > 0) {
-    let firstIdx = Infinity;
-    let lastIdx = -1;
-    for (const mk of sourceGroup.modKeys) {
-      const di = displayOrder.indexOf(mk);
-      if (di !== -1) {
-        if (di < firstIdx) firstIdx = di;
-        if (di > lastIdx) lastIdx = di;
-      }
-    }
-    if (firstIdx !== Infinity && lastIdx !== -1) {
-      const isNoOp =
-        (!ghds.insertAfter && lastIdx + 1 < displayOrder.length && displayOrder[lastIdx + 1] === ghds.slotBeforeKey) ||
-        (ghds.insertAfter && firstIdx > 0 && displayOrder[firstIdx - 1] === ghds.slotBeforeKey);
-      if (isNoOp) return -1;
-    }
-  }
+  if (!ghds?.slotBeforeKey) return -1;
 
   return items.findIndex(
     (item) => item.type === "mod" && item.key === ghds.slotBeforeKey,
@@ -416,17 +359,13 @@ export function autoScroll(
 }
 
 export interface SnapshotExtras {
-  /** ID of the dragged group, used to compute full visual height. */
   draggedGroupId?: string;
-  /** Height ref for the group header row. */
   groupHeaderHeightRef?: React.MutableRefObject<number>;
-  /** Height ref for the dragged group's total visual height (header + cards). */
   groupDragSlotHeightRef?: React.MutableRefObject<number>;
 }
 
 /**
  * Snapshot all card positions and group header positions from the DOM.
- * Call from mousedown before any re-render can shift layout.
  */
 export function snapshotDragPositions(
   refs: DragRefs,
@@ -472,16 +411,16 @@ export function snapshotDragPositions(
     const gid = header.getAttribute("data-folder-id")!;
     const rect = header.getBoundingClientRect();
     gHeaders.set(gid, { top: rect.top, bottom: rect.bottom });
-    // Capture the dragged group's header height
     if (extras?.draggedGroupId && gid === extras.draggedGroupId && extras.groupHeaderHeightRef) {
       extras.groupHeaderHeightRef.current = rect.height;
     }
   });
 
-  // Compute full visual height of the dragged group (header + cards)
+  // Compute full visual height of the dragged group
   if (extras?.draggedGroupId && extras.groupDragSlotHeightRef) {
-    const ownGroup = groups.find((g) => g.id === extras.draggedGroupId);
-    const ownModKeys = new Set(ownGroup?.modKeys ?? []);
+    const ownModKeys = new Set(
+      groups.find((g) => g.id === extras.draggedGroupId!)?.modKeys ?? [],
+    );
     const ownCards = [...positions.entries()].filter(([k]) => ownModKeys.has(k));
     let totalHeight = extras.groupHeaderHeightRef?.current ?? 42;
     for (const [, pos] of ownCards) totalHeight += pos.height;
@@ -489,10 +428,6 @@ export function snapshotDragPositions(
   }
 }
 
-/**
- * Factory: create all shared DragRefs in one call.
- * Use in the orchestrator component to avoid boilerplate.
- */
 export function createDragRefs(): DragRefs {
   return {
     listRef: React.createRef<HTMLDivElement>(),

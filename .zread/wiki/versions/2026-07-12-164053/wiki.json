@@ -1,0 +1,227 @@
+{
+  "id": "2026-07-12-164053",
+  "generated_at": "2026-07-12T08:40:53.9755861Z",
+  "language": "zh",
+  "pages": [
+    {
+      "slug": "1-gai-shu",
+      "title": "概述",
+      "file": "1-gai-shu.md",
+      "section": "快速入门",
+      "level": "Beginner"
+    },
+    {
+      "slug": "2-kuai-su-kai-shi",
+      "title": "快速开始",
+      "file": "2-kuai-su-kai-shi.md",
+      "section": "快速入门",
+      "level": "Beginner"
+    },
+    {
+      "slug": "3-xiang-mu-ji-zhu-zhan-zong-lan",
+      "title": "项目技术栈总览",
+      "file": "3-xiang-mu-ji-zhu-zhan-zong-lan.md",
+      "section": "快速入门",
+      "level": "Beginner"
+    },
+    {
+      "slug": "4-ying-yong-zhu-liu-cheng-cong-lu-jing-xuan-ze-dao-mod-guan-li",
+      "title": "应用主流程：从路径选择到 Mod 管理",
+      "file": "4-ying-yong-zhu-liu-cheng-cong-lu-jing-xuan-ze-dao-mod-guan-li.md",
+      "section": "快速入门",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "5-tauri-v2-shuang-duan-jia-gou-rust-hou-duan-yu-react-qian-duan-de-zhi-ze-hua-fen",
+      "title": "Tauri v2 双端架构：Rust 后端与 React 前端的职责划分",
+      "file": "5-tauri-v2-shuang-duan-jia-gou-rust-hou-duan-yu-react-qian-duan-de-zhi-ze-hua-fen.md",
+      "section": "深入探索",
+      "group": "架构设计",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "6-tauri-ming-ling-zhu-ce-ti-xi-invoke_handler-yu-qian-hou-duan-tong-xin",
+      "title": "Tauri 命令注册体系：invoke_handler 与前后端通信",
+      "file": "6-tauri-ming-ling-zhu-ce-ti-xi-invoke_handler-yu-qian-hou-duan-tong-xin.md",
+      "section": "深入探索",
+      "group": "架构设计",
+      "level": "Advanced"
+    },
+    {
+      "slug": "7-zhuang-tai-guan-li-zustand-shuang-store-she-ji-appstore-yu-modstore",
+      "title": "状态管理：Zustand 双 Store 设计（AppStore 与 ModStore）",
+      "file": "7-zhuang-tai-guan-li-zustand-shuang-store-she-ji-appstore-yu-modstore.md",
+      "section": "深入探索",
+      "group": "架构设计",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "8-rust-duan-mod-mu-lu-sao-miao-workshop-yu-ben-di-shuang-yuan-jie-gou",
+      "title": "Rust 端 Mod 目录扫描：workshop 与本地双源结构",
+      "file": "8-rust-duan-mod-mu-lu-sao-miao-workshop-yu-ben-di-shuang-yuan-jie-gou.md",
+      "section": "深入探索",
+      "group": "Mod 扫描与解析",
+      "level": "Advanced"
+    },
+    {
+      "slug": "9-lua-pei-zhi-jie-xi-luaparse-qu-dong-de-config-lua-modsettings-lua-settings-lua-jie-xi",
+      "title": "Lua 配置解析：luaparse 驱动的 Config.lua / ModSettings.Lua / Settings.Lua 解析",
+      "file": "9-lua-pei-zhi-jie-xi-luaparse-qu-dong-de-config-lua-modsettings-lua-settings-lua-jie-xi.md",
+      "section": "深入探索",
+      "group": "Mod 扫描与解析",
+      "level": "Advanced"
+    },
+    {
+      "slug": "10-modsettings-lua-de-ge-shi-bao-liu-shi-bu-ding-patchmodsettingslua",
+      "title": "ModSettings.Lua 的格式保留式补丁（patchModSettingsLua）",
+      "file": "10-modsettings-lua-de-ge-shi-bao-liu-shi-bu-ding-patchmodsettingslua.md",
+      "section": "深入探索",
+      "group": "Mod 扫描与解析",
+      "level": "Advanced"
+    },
+    {
+      "slug": "11-usemodscanner-gou-zi-sao-miao-zeng-liang-shua-xin-yu-cuo-wu-hui-fu",
+      "title": "useModScanner 钩子：扫描、增量刷新与错误恢复",
+      "file": "11-usemodscanner-gou-zi-sao-miao-zeng-liang-shua-xin-yu-cuo-wu-hui-fu.md",
+      "section": "深入探索",
+      "group": "Mod 扫描与解析",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "12-xuan-ran-mo-xing-displayorder-modgroup-qu-dong-de-buildrenderitems-suan-fa",
+      "title": "渲染模型：displayOrder + ModGroup 驱动的 buildRenderItems 算法",
+      "file": "12-xuan-ran-mo-xing-displayorder-modgroup-qu-dong-de-buildrenderitems-suan-fa.md",
+      "section": "深入探索",
+      "group": "Mod 列表交互",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "13-san-tao-tuo-zhuai-xi-tong-qia-pian-tuo-zhuai-fen-zu-tou-bu-tuo-zhuai-yu-fen-zu-chuang-jian-tuo-zhuai",
+      "title": "三套拖拽系统：卡片拖拽、分组头部拖拽与分组创建拖拽",
+      "file": "13-san-tao-tuo-zhuai-xi-tong-qia-pian-tuo-zhuai-fen-zu-tou-bu-tuo-zhuai-yu-fen-zu-chuang-jian-tuo-zhuai.md",
+      "section": "深入探索",
+      "group": "Mod 列表交互",
+      "level": "Advanced"
+    },
+    {
+      "slug": "14-shai-xuan-xi-tong-fuse-js-mo-hu-sou-suo-fen-lei-biao-qian-qi-yong-zhuang-tai-duo-tiao-jian-guo-lu",
+      "title": "筛选系统：Fuse.js 模糊搜索 + 分类/标签/启用状态多条件过滤",
+      "file": "14-shai-xuan-xi-tong-fuse-js-mo-hu-sou-suo-fen-lei-biao-qian-qi-yong-zhuang-tai-duo-tiao-jian-guo-lu.md",
+      "section": "深入探索",
+      "group": "Mod 列表交互",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "15-shai-xuan-zhuang-tai-chi-jiu-hua-localstorage-huan-cun-yu-qi-dong-hui-fu",
+      "title": "筛选状态持久化：localStorage 缓存与启动恢复",
+      "file": "15-shai-xuan-zhuang-tai-chi-jiu-hua-localstorage-huan-cun-yu-qi-dong-hui-fu.md",
+      "section": "深入探索",
+      "group": "Mod 列表交互",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "16-settingseditor-fen-zu-dao-hang-yu-toggle-slider-dropdown-biao-dan-kong-jian",
+      "title": "SettingsEditor：分组导航与 Toggle/Slider/Dropdown 表单控件",
+      "file": "16-settingseditor-fen-zu-dao-hang-yu-toggle-slider-dropdown-biao-dan-kong-jian.md",
+      "section": "深入探索",
+      "group": "Mod 设置编辑",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "17-ji-shi-zang-zhuang-tai-gen-zong-kua-mod-de-wei-bao-cun-bian-geng-jian-ce",
+      "title": "即时脏状态跟踪：跨 Mod 的未保存变更检测",
+      "file": "17-ji-shi-zang-zhuang-tai-gen-zong-kua-mod-de-wei-bao-cun-bian-geng-jian-ce.md",
+      "section": "深入探索",
+      "group": "Mod 设置编辑",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "18-profile-shu-ju-jie-gou-ban-ben-hua-json-fang-an-yu-mod-que-shi-jian-ce",
+      "title": "Profile 数据结构：版本化 JSON 方案与 Mod 缺失检测",
+      "file": "18-profile-shu-ju-jie-gou-ban-ben-hua-json-fang-an-yu-mod-que-shi-jian-ce.md",
+      "section": "深入探索",
+      "group": "方案管理",
+      "level": "Advanced"
+    },
+    {
+      "slug": "19-fang-an-dao-ru-dao-chu-wen-jian-ji-du-xie-yu-kua-huan-jing-qian-yi",
+      "title": "方案导入/导出：文件级读写与跨环境迁移",
+      "file": "19-fang-an-dao-ru-dao-chu-wen-jian-ji-du-xie-yu-kua-huan-jing-qian-yi.md",
+      "section": "深入探索",
+      "group": "方案管理",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "20-you-xi-qi-dong-yu-jin-cheng-jian-kong-pid-lun-xun-tauri-shi-jian-tui-song",
+      "title": "游戏启动与进程监控：PID 轮询 + Tauri 事件推送",
+      "file": "20-you-xi-qi-dong-yu-jin-cheng-jian-kong-pid-lun-xun-tauri-shi-jian-tui-song.md",
+      "section": "深入探索",
+      "group": "游戏进程管理",
+      "level": "Advanced"
+    },
+    {
+      "slug": "21-qiang-zhi-zhong-zhi-de-shuang-jie-duan-ce-lue-wm_close-you-ya-guan-bi-taskkill-qiang-sha",
+      "title": "强制终止的双阶段策略：WM_CLOSE 优雅关闭 + taskkill 强杀",
+      "file": "21-qiang-zhi-zhong-zhi-de-shuang-jie-duan-ce-lue-wm_close-you-ya-guan-bi-taskkill-qiang-sha.md",
+      "section": "深入探索",
+      "group": "游戏进程管理",
+      "level": "Advanced"
+    },
+    {
+      "slug": "22-qian-hou-duan-tong-ri-zhi-guan-xian-qian-duan-ri-zhi-qiao-jie-zhi-rust-tracing-zi-xi-tong",
+      "title": "前后端统一日志管线：前端日志桥接至 Rust tracing 子系统",
+      "file": "22-qian-hou-duan-tong-ri-zhi-guan-xian-qian-duan-ri-zhi-qiao-jie-zhi-rust-tracing-zi-xi-tong.md",
+      "section": "深入探索",
+      "group": "日志与可靠性",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "23-beng-kui-ri-zhi-bao-hu-ring-buffer-nei-cun-huan-chong-cuo-wu-hong-fa-ci-pan-xie-ru",
+      "title": "崩溃日志保护：Ring Buffer 内存缓冲 + 错误触发磁盘写入",
+      "file": "23-beng-kui-ri-zhi-bao-hu-ring-buffer-nei-cun-huan-chong-cuo-wu-hong-fa-ci-pan-xie-ru.md",
+      "section": "深入探索",
+      "group": "日志与可靠性",
+      "level": "Advanced"
+    },
+    {
+      "slug": "24-errorboundary-yu-quan-ju-wei-bu-huo-yi-chang-chu-li",
+      "title": "ErrorBoundary 与全局未捕获异常处理",
+      "file": "24-errorboundary-yu-quan-ju-wei-bu-huo-yi-chang-chu-li.md",
+      "section": "深入探索",
+      "group": "日志与可靠性",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "25-yuan-zi-xie-ru-ce-lue-lin-shi-wen-jian-zhong-ming-ming-xie-ru-yan-zheng-zi-dong-bei-fen",
+      "title": "原子写入策略：临时文件 + 重命名 + 写入验证 + 自动备份",
+      "file": "25-yuan-zi-xie-ru-ce-lue-lin-shi-wen-jian-zhong-ming-ming-xie-ru-yan-zheng-zi-dong-bei-fen.md",
+      "section": "深入探索",
+      "group": "文件 I/O 与数据安全",
+      "level": "Advanced"
+    },
+    {
+      "slug": "26-pei-zhi-chi-jiu-hua-config-json-de-zi-dong-huan-cun-yu-shi-xiao-hui-fu",
+      "title": "配置持久化：config.json 的自动缓存与失效恢复",
+      "file": "26-pei-zhi-chi-jiu-hua-config-json-de-zi-dong-huan-cun-yu-shi-xiao-hui-fu.md",
+      "section": "深入探索",
+      "group": "文件 I/O 与数据安全",
+      "level": "Intermediate"
+    },
+    {
+      "slug": "27-yan-se-biao-qian-wen-ben-xuan-ran-parsecolortags-yu-rendercoloredtext",
+      "title": "颜色标签文本渲染：parseColorTags 与 renderColoredText",
+      "file": "27-yan-se-biao-qian-wen-ben-xuan-ran-parsecolortags-yu-rendercoloredtext.md",
+      "section": "深入探索",
+      "group": "辅助工具",
+      "level": "Beginner"
+    },
+    {
+      "slug": "28-biao-qian-zhong-ying-wen-ying-she-tagmapping-guo-ji-hua-gua-pei",
+      "title": "标签中英文映射：tagMapping 国际化适配",
+      "file": "28-biao-qian-zhong-ying-wen-ying-she-tagmapping-guo-ji-hua-gua-pei.md",
+      "section": "深入探索",
+      "group": "辅助工具",
+      "level": "Beginner"
+    }
+  ]
+}

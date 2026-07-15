@@ -81,11 +81,6 @@ export interface ModGroup {
   collapsed: boolean;
   /** Ordered list of mod keys (source_fileId) in this group */
   modKeys: string[];
-  /** Card-key anchor for positioning an empty group between cards.
-   *  Set at creation time from drag position; cleared when a mod is
-   *  added to the group. */
-  anchorBefore?: string;
-  anchorAfter?: string;
 }
 
 /** Profile metadata for saved mod configurations */
@@ -116,8 +111,10 @@ export interface ProfileData {
   modSettings: Record<string, Record<string, unknown>>;
   /** Virtual mod groups */
   groups: ModGroup[];
-  /** Group ordering */
-  groupOrder: string[];
+  /** Unified display order (mod keys + group IDs interleaved) */
+  displayOrder: string[];
+  /** @deprecated Legacy group order — migrated to displayOrder on import */
+  groupOrder?: string[];
   /** Mod metadata keyed by modKey, for missing-mod detection on import */
   modMeta: Record<string, ModMeta>;
 }

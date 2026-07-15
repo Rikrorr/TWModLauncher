@@ -370,17 +370,27 @@ function App() {
 
     setMods(updated);
 
-    // Restore groups if present
+    // Restore groups and displayOrder if present
     if (data.version >= 1 && data.groups) {
-      // Strip anchorBefore/anchorAfter from imported groups — card anchors
-      // are meaningless on a different client with different displayOrder.
-      const cleanedGroups = data.groups.map((g) => ({
-        ...g,
-        anchorBefore: undefined,
-        anchorAfter: undefined,
-      }));
-      useAppStore.getState().setGroups(cleanedGroups);
-      if (data.groupOrder) useAppStore.getState().setGroupOrder(data.groupOrder);
+      useAppStore.getState().setGroups(data.groups);
+
+      // Restore unified displayOrder from profile
+      try {
+        const raw = localStorage.getItem("twm-filter-prefs");
+        const prefs = raw ? JSON.parse(raw) : {};
+        if (data.displayOrder && data.displayOrder.length > 0) {
+          prefs.displayOrder = data.displayOrder;
+        } else if (data.groupOrder) {
+          // Legacy: merge old groupOrder into displayOrder
+          const order: string[] = prefs.displayOrder ?? [];
+          const cleaned = order.filter((k: string) => !data.groups.some((g) => g.id === k));
+          for (const gid of data.groupOrder) {
+            if (!cleaned.includes(gid)) cleaned.push(gid);
+          }
+          prefs.displayOrder = cleaned;
+        }
+        localStorage.setItem("twm-filter-prefs", JSON.stringify(prefs));
+      } catch { /* ignore */ }
     }
 
     setLastMessage(`方案 "${data.name}" 已加载（${data.enabledMods.length} 个已启用），请点击同步保存`);

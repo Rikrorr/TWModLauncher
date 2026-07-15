@@ -14,6 +14,7 @@ interface Props {
   onOrderUp?: (e: React.MouseEvent) => void;
   onOrderDown?: (e: React.MouseEvent) => void;
   onOrderChange?: (order: number) => void;
+  onOrderFocus?: () => void;
   /** Custom drag: initiate on mousedown */
   onDragMouseDown?: (e: React.MouseEvent, key: string) => void;
   isDragging?: boolean;
@@ -35,6 +36,7 @@ export default function ModCard({
   onOrderUp,
   onOrderDown,
   onOrderChange,
+  onOrderFocus,
   onDragMouseDown,
   isDragging,
   isDragOver,
@@ -185,6 +187,7 @@ export default function ModCard({
             inputMode="numeric"
             pattern="[0-9]*"
             value={localOrder}
+            onFocus={() => onOrderFocus?.()}
             onChange={(e) => {
               const raw = e.target.value;
               if (raw === "") {
@@ -211,11 +214,11 @@ export default function ModCard({
               }
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur();
             }}
             title="加载顺序（可直接输入）"
             className="w-9 text-center bg-slate-700 border border-slate-600 rounded text-slate-300 text-[10px] px-1 py-0.5
-                       outline-none focus:border-blue-500 transition-colors"
+                       outline-none focus:border-blue-500 transition-colors select-text"
           />
           <button
             onClick={onOrderDown}
@@ -367,6 +370,7 @@ export default function ModCard({
             inputMode="numeric"
             pattern="[0-9]*"
             value={localOrder}
+            onFocus={() => onOrderFocus?.()}
             onChange={(e) => {
               const raw = e.target.value;
               if (raw === "") {
@@ -393,12 +397,12 @@ export default function ModCard({
               }
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur();
             }}
             onClick={(e) => e.stopPropagation()}
             title="加载顺序（可直接输入）"
             className="w-11 text-center bg-slate-700 border border-slate-600 rounded text-slate-300 text-xs px-1 py-0.5
-                       outline-none focus:border-blue-500 transition-colors"
+                       outline-none focus:border-blue-500 transition-colors select-text"
           />
           <button
             onClick={onOrderDown}

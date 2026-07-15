@@ -12,13 +12,38 @@ import {
 
 const log = createLogger("useCardDrag");
 
+// ─── Shared helpers ─────────────────────────────────────────────────────────
+
+/** Move `keys` from `sourceIdx` to `targetIdx` in displayOrder. */
+function moveKeysInDisplayOrder(
+  displayOrder: string[],
+  keys: string[],
+  sourceIdx: number,
+  targetIdx: number,
+): string[] | null {
+  if (sourceIdx === targetIdx || keys.length === 0) return null;
+  const next = [...displayOrder];
+  const removed: string[] = [];
+  for (const k of keys) {
+    const i = next.indexOf(k);
+    if (i !== -1) removed.push(...next.splice(i, 1));
+  }
+  if (removed.length === 0) return null;
+  let insertAt = targetIdx;
+  if (targetIdx > sourceIdx) {
+    insertAt = Math.max(0, targetIdx - removed.length);
+  }
+  insertAt = Math.min(insertAt, next.length);
+  next.splice(insertAt, 0, ...removed);
+  return next;
+}
+
 interface UseCardDragParams {
   displayOrder: string[];
   setDisplayOrder: React.Dispatch<React.SetStateAction<string[]>>;
   groups: ModGroup[];
   modGroupMapRef: React.MutableRefObject<Map<string, string>>;
-  groupOrderRef: React.MutableRefObject<string[]>;
-  handleMoveToGroup: (modKey: string, groupId: string | null, displayOrder?: string[]) => void;
+  handleMoveToGroup: (modKey: string, groupId: string | null) => void;
   refs: DragRefs;
 }
 
@@ -27,7 +52,6 @@ export function useCardDrag({
   setDisplayOrder,
   groups,
   modGroupMapRef,
-  groupOrderRef,
   handleMoveToGroup,
   refs,
 }: UseCardDragParams) {
@@ -38,64 +62,67 @@ export function useCardDrag({
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
   const dragOverGroupRef = useRef<string | null>(null);
 
+  const [lineIndented, setLineIndented] = useState(false);
+
   const displayOrderRef = useRef(displayOrder);
   useLayoutEffect(() => { displayOrderRef.current = displayOrder; });
 
   const handleDragMouseDown = useCallback(
     // eslint-disable-next-line react-hooks/immutability -- refs mutation in event handler is intended drag pattern
     (e: React.MouseEvent, key: string) => {
+      // All mod keys (grouped or not) live in the unified displayOrder.
       const idx = displayOrder.indexOf(key);
       if (idx === -1) {
-        log.debug(`[drag] mousedown skipped: key not in displayOrder ${key}`);
+        log.info(`[drag] mousedown skipped: key not in displayOrder ${key}`);
         return;
       }
-      log.debug(`[drag] mousedown start key=${key} idx=${idx}`);
+      log.info(`[drag] mousedown start key=${key} idx=${idx}`);
       e.preventDefault();
       // eslint-disable-next-line react-hooks/immutability
       refs.preventClickRef.current = true;
 
-      // ── shared: snapshot all DOM positions ──
+      // Snapshot all DOM positions
       snapshotDragPositions(refs, groups);
 
-      // ── multi-drag detection ──
+      // Dragging a card that is not part of the current selection clears
+      // the selection — the drag signals "I want to work with THIS card".
+      // Skip when modifier keys are held: the click handler will handle
+      // Shift/Ctrl/Meta selection — clearing here would nuke lastClickedKey.
       const storeSelection = useModStore.getState().selectedModKeys;
+      if (!storeSelection.includes(key) && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        useModStore.getState().clearSelection();
+      }
 
       let multiDrag = false;
       let multiDragKeys: string[] = [];
       let multiDragMinIdx = idx;
-      let multiDragMaxIdx = idx;
 
       if (storeSelection.length > 1 && storeSelection.includes(key)) {
         multiDrag = true;
         multiDragKeys = [...storeSelection];
-        // Compute block boundaries
         for (const sk of multiDragKeys) {
           const si = displayOrder.indexOf(sk);
-          if (si !== -1) {
-            if (si < multiDragMinIdx) multiDragMinIdx = si;
-            if (si > multiDragMaxIdx) multiDragMaxIdx = si;
-          }
+          if (si !== -1 && si < multiDragMinIdx) multiDragMinIdx = si;
         }
-        log.debug(`[drag] multi-drag detected: ${multiDragKeys.length} keys, range [${multiDragMinIdx}, ${multiDragMaxIdx}]`);
+        log.info(`[drag] multi-drag detected: ${multiDragKeys.length} keys, minIdx=${multiDragMinIdx}`);
       }
 
+      setLineIndented(false);
       setDragState({
         sourceKey: key,
         sourceIdx: idx,
         currentIdx: idx,
         startY: e.clientY,
         started: false,
-        sourceGroupId: modGroupMapRef.current.get(key) ?? undefined,
         multiDrag,
         multiDragKeys: multiDragKeys.length > 0 ? multiDragKeys : undefined,
         multiDragMinIdx: multiDrag ? multiDragMinIdx : undefined,
-        multiDragMaxIdx: multiDrag ? multiDragMaxIdx : undefined,
       });
     },
     [displayOrder, groups, modGroupMapRef, refs],
   );
 
-  // ── shared: event listener lifecycle ──
+  // ── Event listener lifecycle ──
   useEffect(() => {
     if (!dragState) return;
 
@@ -103,103 +130,113 @@ export function useCardDrag({
       const ds = dragStateRef.current;
       if (!ds) return;
 
-      // ── shared: threshold check ──
+      // Threshold check
       const dy = Math.abs(e.clientY - ds.startY);
       if (!ds.started && dy < DRAG_THRESHOLD) return;
 
-      // ── shared: auto-scroll + scrollDelta ──
+      // Auto-scroll + scrollDelta
       const container = refs.scrollContainerRef.current;
       autoScroll(e, container, refs);
       const scrollDelta = container
         ? container.scrollTop - refs.scrollSnapshotRef.current
         : 0;
 
-      // ── card-specific: detect which group the cursor is in (header + cards).
-      //     Must run before target building so grouped cards are included. ──
+      // Detect which group the cursor is in (for enter-group / green highlight).
+      //   - Top 40% of header  → "slot before group"  → blue line only
+      //   - Bottom 60% of header → "enter group" (other groups) / reorder (own group)
+      //   - Over group cards      → "enter group" (other groups) / reorder (own group)
+      // Own-group enter-zone keeps membership for mouseup (via ref), but the UI
+      // (dragOverGroupId state) suppresses green highlight to avoid blue+green clash.
       const groupHeaders = refs.groupHeaderPositionsRef.current;
       const positions = refs.cardPositionsRef.current;
+      const sourceGroupId = ds ? (modGroupMapRef.current.get(ds.sourceKey) ?? null) : null;
 
       dragOverGroupRef.current = null;
       groupHeaders.forEach((gh, gid) => {
-        const groupTop = gh.top - scrollDelta;
-        let groupBottom = gh.bottom - scrollDelta;
-        // Extend to the full visual area of the group (header + all cards)
-        for (const [k, pos] of positions) {
-          const cardGid = modGroupMapRef.current.get(k) ?? null;
+        const headerTop = gh.top - scrollDelta;
+        const headerBottom = gh.bottom - scrollDelta;
+
+        // Compute full group bottom (header + cards)
+        let groupBottom = headerBottom;
+        for (const [cardKey, pos] of positions) {
+          const cardGid = modGroupMapRef.current.get(cardKey) ?? null;
           if (cardGid === gid) {
             const b = pos.top + pos.height - scrollDelta;
             if (b > groupBottom) groupBottom = b;
           }
         }
-        if (e.clientY >= groupTop && e.clientY <= groupBottom) {
+
+        // Enter-group zone: bottom 60% of header, or anywhere below header (cards area)
+        const enterZoneTop = headerTop + (headerBottom - headerTop) * 0.4;
+        if (e.clientY >= enterZoneTop && e.clientY <= groupBottom) {
           dragOverGroupRef.current = gid;
         }
       });
+      // Green highlight only for groups DIFFERENT from the source card's group.
+      // The ref still tracks own-group so mouseup keeps membership on intra-group drop.
       const hoveringOverGroup = dragOverGroupRef.current;
-      setDragOverGroupId(hoveringOverGroup);
+      setDragOverGroupId(
+        hoveringOverGroup && hoveringOverGroup !== sourceGroupId
+          ? hoveringOverGroup
+          : null,
+      );
+      // Blue line indented only when dragging within the source card's own group
+      setLineIndented(sourceGroupId !== null && hoveringOverGroup === sourceGroupId);
 
-      // ── card-specific: collect valid target cards sorted by visual position ──
-      const currentGroupMap = modGroupMapRef.current;
-      const draggedGroupId = currentGroupMap.get(ds.sourceKey) ?? null;
-
-      const targets: { key: string; top: number; bottom: number; midY: number }[] = [];
+      // Build combined visual items: cards + group headers, sorted by visual position.
       const multiKeys = ds.multiDragKeys;
+      const disp = displayOrderRef.current;
+
+      interface VisualItem {
+        key: string;
+        top: number;
+        bottom: number;
+        midY: number;
+      }
+
+      const visualItems: VisualItem[] = [];
+
+      // Add card positions (all cards, grouped or not — their keys are in displayOrder)
       positions.forEach((pos, k) => {
         if (k === ds.sourceKey) return;
         if (multiKeys?.includes(k)) return;
-        const gid = currentGroupMap.get(k) ?? null;
-        if (draggedGroupId) {
-          // Grouped card: include cards in the same group + ungrouped cards
-          if (gid !== draggedGroupId && gid !== null) return;
-        } else if (hoveringOverGroup) {
-          // Ungrouped card hovering over a group: include that group's cards
-          // + ungrouped cards, so the insertion position is meaningful
-          if (gid !== null && gid !== hoveringOverGroup) return;
-        } else {
-          // Ungrouped card not over any group: only ungrouped cards
-          if (gid !== null) return;
-        }
-        targets.push({
+        visualItems.push({
           key: k,
           top: pos.top - scrollDelta,
           bottom: pos.top + pos.height - scrollDelta,
           midY: pos.midY - scrollDelta,
         });
       });
-      targets.sort((a, b) => a.top - b.top);
 
-      const disp = displayOrderRef.current;
+      // Add group header positions so gaps between adjacent groups are valid targets
+      groupHeaders.forEach((gh, gid) => {
+        const headerTop = gh.top - scrollDelta;
+        const headerBottom = gh.bottom - scrollDelta;
+        visualItems.push({
+          key: `__group__${gid}`,
+          top: headerTop,
+          bottom: headerBottom,
+          midY: (headerTop + headerBottom) / 2,
+        });
+      });
 
-      let slotBeforeGroupId: string | undefined;
+      visualItems.sort((a, b) => a.top - b.top);
 
-      if (!hoveringOverGroup && !draggedGroupId) {
-        // Only set slotBeforeGroupId when the cursor is in the gap between
-        // the last target card and the group header. Without this check,
-        // e.clientY < gh.top is true for ANY cursor above the group header,
-        // even when hovering between two ungrouped cards far above it.
-        const lastTargetBottom =
-          targets.length > 0
-            ? targets[targets.length - 1].bottom
-            : -Infinity;
-        if (targets.length === 0 || e.clientY > lastTargetBottom) {
-          const go = groupOrderRef.current;
-          const gHeaders = refs.groupHeaderPositionsRef.current;
-          for (let i = 0; i < go.length; i++) {
-            const gh = gHeaders.get(go[i]);
-            if (!gh) continue;
-            if (e.clientY < gh.top - scrollDelta) {
-              slotBeforeGroupId = go[i];
-              break;
-            }
-          }
+      /** Map a visual item to its displayOrder index.
+       *  All card keys live in displayOrder so this is a direct lookup.
+       *  Group header sentinels map to the group ID's index. */
+      function getDisplayIdx(item: VisualItem): number {
+        if (item.key.startsWith("__group__")) {
+          const gid = item.key.slice(9);
+          const idx = disp.indexOf(gid);
+          return idx === -1 ? disp.length : idx;
         }
+        const idx = disp.indexOf(item.key);
+        return idx === -1 ? disp.length : idx;
       }
 
-      // ── Range-based target computation ──
-      // Compute the insertion position based on cursor position relative to
-      // card bounds and inter-card gaps. Runs for all drag scenarios.
+      // Range-based target computation using combined visual items
       let targetDisplayIdx = ds.sourceIdx;
-      let cursorOverCardKey: string | null = null;
 
       const sourcePos = positions.get(ds.sourceKey);
       const insideSource =
@@ -207,34 +244,70 @@ export function useCardDrag({
         e.clientY >= sourcePos.top - scrollDelta &&
         e.clientY <= sourcePos.top + sourcePos.height - scrollDelta;
 
-      if (!insideSource && targets.length > 0) {
-        const first = targets[0];
-        const last = targets[targets.length - 1];
+      if (!insideSource && visualItems.length > 0) {
+        const first = visualItems[0];
+        const last = visualItems[visualItems.length - 1];
 
         if (e.clientY <= first.top) {
-          targetDisplayIdx = disp.indexOf(first.key);
+          // Cursor above the first visual item
+          let nearestAboveIdx = -1;
+          let nearestAboveBottom = -Infinity;
+          for (const vi of visualItems) {
+            if (vi.bottom <= e.clientY && vi.bottom > nearestAboveBottom) {
+              nearestAboveBottom = vi.bottom;
+              const idx = getDisplayIdx(vi);
+              if (idx !== -1 && idx > nearestAboveIdx) nearestAboveIdx = idx;
+            }
+          }
+          targetDisplayIdx = nearestAboveIdx !== -1 ? nearestAboveIdx + 1 : 0;
         } else if (e.clientY >= last.bottom) {
-          targetDisplayIdx = disp.indexOf(last.key) + 1;
+          // Cursor below the last visual item
+          let nearestBelowIdx = disp.length;
+          let nearestBelowTop = Infinity;
+          for (const vi of visualItems) {
+            if (vi.top >= e.clientY && vi.top < nearestBelowTop) {
+              nearestBelowTop = vi.top;
+              const idx = getDisplayIdx(vi);
+              if (idx !== -1 && idx < nearestBelowIdx) nearestBelowIdx = idx;
+            }
+          }
+          targetDisplayIdx = nearestBelowIdx < disp.length ? nearestBelowIdx : disp.length;
         } else {
+          // Cursor between visual items — find the gap
           let found = false;
-          for (let i = 0; i < targets.length && !found; i++) {
-            const t = targets[i];
+          for (let i = 0; i < visualItems.length && !found; i++) {
+            const vi = visualItems[i];
 
-            if (e.clientY >= t.top && e.clientY <= t.bottom) {
-              cursorOverCardKey = t.key;
-              targetDisplayIdx =
-                e.clientY < t.midY
-                  ? disp.indexOf(t.key)
-                  : disp.indexOf(t.key) + 1;
+            if (e.clientY >= vi.top && e.clientY <= vi.bottom) {
+              // Cursor is directly over this item.
+              if (vi.key.startsWith("__group__")) {
+                const gid = vi.key.slice(9);
+                const slotZoneBottom = vi.top + (vi.bottom - vi.top) * 0.4;
+                if (e.clientY < slotZoneBottom) {
+                  // Top 40% of any header: slot before group (or exit if in this group)
+                  targetDisplayIdx = getDisplayIdx(vi);
+                } else if (gid === sourceGroupId) {
+                  // Own group bottom 60%: reorder zone → blue line below header
+                  targetDisplayIdx = getDisplayIdx(vi) + 1;
+                } else {
+                  // Other group bottom 60%: enter group → green highlight, no blue line
+                  targetDisplayIdx = ds.sourceIdx;
+                }
+              } else {
+                targetDisplayIdx =
+                  e.clientY < vi.midY
+                    ? getDisplayIdx(vi)
+                    : getDisplayIdx(vi) + 1;
+              }
               found = true;
-            } else if (i < targets.length - 1) {
-              const next = targets[i + 1];
-              if (e.clientY > t.bottom && e.clientY < next.top) {
-                const gapMid = (t.bottom + next.top) / 2;
+            } else if (i < visualItems.length - 1) {
+              const next = visualItems[i + 1];
+              if (e.clientY > vi.bottom && e.clientY < next.top) {
+                const gapMid = (vi.bottom + next.top) / 2;
                 targetDisplayIdx =
                   e.clientY < gapMid
-                    ? disp.indexOf(t.key) + 1
-                    : disp.indexOf(next.key);
+                    ? getDisplayIdx(vi) + 1
+                    : getDisplayIdx(next);
                 found = true;
               }
             }
@@ -243,115 +316,36 @@ export function useCardDrag({
             targetDisplayIdx = ds.sourceIdx;
           }
         }
-      } else if (targets.length === 0) {
-        // No valid card targets — compute position from cursor relative to
-        // group boundaries so ungrouped cards can still be reordered.
-        if (draggedGroupId) {
-          targetDisplayIdx = ds.currentIdx;
-        } else if (slotBeforeGroupId) {
-          // Cursor is above a group — insert before its first member
-          const beforeGroup = groups.find((g) => g.id === slotBeforeGroupId);
-          if (beforeGroup) {
-            let minIdx = disp.length;
-            for (const mk of beforeGroup.modKeys) {
-              const idx = disp.indexOf(mk);
-              if (idx !== -1 && idx < minIdx) minIdx = idx;
-            }
-            targetDisplayIdx = minIdx < disp.length ? minIdx : disp.length;
-          } else {
-            targetDisplayIdx = ds.sourceIdx;
-          }
-        } else {
-          // Cursor is below all groups or in empty area
-          const sourcePos = positions.get(ds.sourceKey);
-          if (sourcePos) {
-            const sourceBottom = sourcePos.top + sourcePos.height - scrollDelta;
-            targetDisplayIdx = e.clientY > sourceBottom ? disp.length : ds.sourceIdx;
-          } else {
-            targetDisplayIdx = ds.sourceIdx;
-          }
+      } else if (visualItems.length === 0) {
+        // No visual items at all — use source position
+        const sp = positions.get(ds.sourceKey);
+        if (sp) {
+          const sourceBottom = sp.top + sp.height - scrollDelta;
+          targetDisplayIdx = e.clientY > sourceBottom ? disp.length : ds.sourceIdx;
         }
       }
 
-
-      // ── Group boundary detection ──
-      // Determine if a grouped card is exiting its source group.
-      // Exit when: (a) cursor is over a non-group-member card, or
-      // (b) targetDisplayIdx falls outside the group's member range.
-      let exitingGroup: 'top' | 'bottom' | undefined;
-
-      if (draggedGroupId && !hoveringOverGroup) {
-        const ownGroup = groups.find((g) => g.id === draggedGroupId);
-        if (ownGroup && ownGroup.modKeys.length > 0) {
-          let minIdx = disp.length;
-          let maxIdx = -1;
-          for (const mk of ownGroup.modKeys) {
-            const idx = disp.indexOf(mk);
-            if (idx !== -1) {
-              if (idx < minIdx) minIdx = idx;
-              if (idx > maxIdx) maxIdx = idx;
-            }
-          }
-
-          // Rule A: cursor directly over a non-group card → always exit.
-          // Keep the range-based targetDisplayIdx — it already points to the
-          // cursor position. Only set the exit direction.
-          if (cursorOverCardKey) {
-            const cardGid = currentGroupMap.get(cursorOverCardKey) ?? null;
-            if (cardGid !== draggedGroupId) {
-              exitingGroup =
-                disp.indexOf(cursorOverCardKey) <= minIdx ? 'top' : 'bottom';
-            }
-          }
-
-          // Rule B: target position is outside the group's member range
-          if (!exitingGroup) {
-            const gh = refs.groupHeaderPositionsRef.current.get(draggedGroupId);
-            if (gh && e.clientY < gh.top - scrollDelta) {
-              exitingGroup = 'top';
-            } else if (targetDisplayIdx < minIdx) {
-              exitingGroup = 'top';
-            } else if (targetDisplayIdx > maxIdx + 1) {
-              exitingGroup = 'bottom';
-            }
-          }
-        }
-      }
-
-      // Snap to group boundaries. Runs for all ungrouped card drags
-      // (including when hovering over a group) to prevent interleaving
-      // ungrouped cards between group members in displayOrder.
-      if (!draggedGroupId) {
-        for (const gid of groupOrderRef.current) {
-          // Cursor is inside this group — user intends to drop into it,
-          // not snap to its boundary. Skip to allow group-enter in mouseup.
-          if (gid === hoveringOverGroup) continue;
-          const group = groups.find((g) => g.id === gid);
-          if (!group || group.modKeys.length === 0) continue;
-          let minIdx = Infinity;
-          let maxIdx = -1;
-          for (const mk of group.modKeys) {
-            const idx = disp.indexOf(mk);
-            if (idx !== -1) {
-              if (idx < minIdx) minIdx = idx;
-              if (idx > maxIdx) maxIdx = idx;
-            }
-          }
-          if (targetDisplayIdx >= minIdx && targetDisplayIdx <= maxIdx) {
-            targetDisplayIdx = minIdx;
-            slotBeforeGroupId = gid;
-            break;
-          }
-        }
+      // When the cursor is inside a different group's enter-zone (bottom 60%
+      // of header or on group cards), suppress the blue insertion line.
+      // The green highlight on the group header already signals "will enter
+      // this group on mouseup". Intra-group reorder (same group) still shows
+      // the blue line for card positioning.
+      const targetGroupId = dragOverGroupRef.current;
+      if (targetGroupId && targetGroupId !== sourceGroupId) {
+        targetDisplayIdx = ds.sourceIdx;
       }
 
       if (targetDisplayIdx === -1) {
-        log.debug(`[drag] mousemove: targetDisplayIdx -1`);
+        log.info(`[drag] mousemove: targetDisplayIdx -1`);
         return;
       }
 
-      if (!ds.started || targetDisplayIdx !== ds.currentIdx || slotBeforeGroupId !== ds.slotBeforeGroupId) {
-        log.debug(`[drag] mousemove targetDisplayIdx=${targetDisplayIdx} overGroup=${dragOverGroupRef.current} slotBeforeGroupId=${slotBeforeGroupId}`);
+      if (!ds.started || targetDisplayIdx !== ds.currentIdx) {
+        log.info(
+          `[drag] mousemove targetDisplayIdx=${targetDisplayIdx} ` +
+          `overGroup=${(dragOverGroupRef.current ?? "").slice(0, 8) || "null"} ` +
+          `visualItems=${visualItems.length}`,
+        );
       }
 
       setDragState((prev) =>
@@ -360,151 +354,68 @@ export function useCardDrag({
               ...prev,
               started: true,
               currentIdx: targetDisplayIdx !== prev.currentIdx ? targetDisplayIdx : prev.currentIdx,
-              slotBeforeGroupId,
-              exitingGroup,
             }
           : null,
       );
     };
 
-    // ── card-specific: mouseup handler ──
+    // ── Mouseup handler ──
     const handleMouseUp = () => {
       const ds = dragStateRef.current;
       const targetGroupId = dragOverGroupRef.current;
-      log.debug(`[drag] mouseup sourceKey=${ds?.sourceKey} started=${ds?.started} sourceIdx=${ds?.sourceIdx} currentIdx=${ds?.currentIdx} dragOverGroup=${targetGroupId} slotBeforeGroupId=${ds?.slotBeforeGroupId} multiDrag=${ds?.multiDrag}`);
+      const sourceGroupId = ds ? (modGroupMapRef.current.get(ds.sourceKey) ?? null) : null;
+      log.info(`[drag] mouseup sourceKey=${ds?.sourceKey} started=${ds?.started} sourceIdx=${ds?.sourceIdx} currentIdx=${ds?.currentIdx} dragOverGroup=${targetGroupId?.slice(0, 8) ?? "null"} sourceGroup=${sourceGroupId?.slice(0, 8) ?? "null"} multiDrag=${ds?.multiDrag}`);
       setDragState(null);
 
       if (ds?.started) {
         setTimeout(() => { refs.preventClickRef.current = false; }, 0);
 
-        // ── Multi-drag: move all selected items as a block ──
-        if (ds.multiDrag && ds.multiDragKeys && ds.multiDragKeys.length > 1) {
-          const keys = ds.multiDragKeys;
-          const blockSize = keys.length;
-          const minIdx = ds.multiDragMinIdx ?? ds.sourceIdx;
-          const maxIdx = ds.multiDragMaxIdx ?? ds.sourceIdx;
+        // Determine the keys being moved
+        const isMulti = ds.multiDrag && ds.multiDragKeys && ds.multiDragKeys.length > 1;
+        const movedKeys = isMulti ? ds.multiDragKeys! : [ds.sourceKey];
+        const sourceIdx = isMulti ? (ds.multiDragMinIdx ?? ds.sourceIdx) : ds.sourceIdx;
 
-          // Compute adjusted target: the currentIdx points to where the block
-          // should land. Skip reorder when the block wouldn't actually move.
-          const crossGroupMove = !!(targetGroupId && ds.sourceGroupId && targetGroupId !== ds.sourceGroupId);
+        // Reposition in displayOrder (works for all keys — grouped or ungrouped)
+        const order = displayOrderRef.current;
+        const effectiveTargetIdx = ds.sourceIdx !== ds.currentIdx ? ds.currentIdx : null;
+        const nextOrder = effectiveTargetIdx !== null
+          ? moveKeysInDisplayOrder(order, movedKeys, sourceIdx, effectiveTargetIdx)
+          : null;
+        if (nextOrder) {
+          setDisplayOrder(nextOrder);
+        }
 
-          if (!crossGroupMove && ds.sourceIdx !== ds.currentIdx && !ds.slotBeforeGroupId) {
-            setDisplayOrder((prev) => {
-              const next = [...prev];
-              // Remove all selected items
-              const removed: string[] = [];
-              for (const k of keys) {
-                const i = next.indexOf(k);
-                if (i !== -1) removed.push(...next.splice(i, 1));
-              }
-              // Compute insertion position
-              let insertAt = ds.currentIdx;
-              // Adjust: if target was after the block, account for removed items
-              if (ds.currentIdx > maxIdx) {
-                insertAt = ds.currentIdx - blockSize;
-              } else if (ds.currentIdx > minIdx) {
-                insertAt = minIdx;
-              }
-              insertAt = Math.max(0, Math.min(insertAt, next.length));
-              next.splice(insertAt, 0, ...removed);
-              return next;
-            });
-          } else if (ds.slotBeforeGroupId) {
-            // Block snaps to before a group
-            const group = groups.find((g) => g.id === ds.slotBeforeGroupId);
-            if (group) {
-              const order = [...displayOrder];
-              let groupMinIdx = order.length;
-              for (const mk of group.modKeys) {
-                const i = order.indexOf(mk);
-                if (i !== -1 && i < groupMinIdx) groupMinIdx = i;
-              }
-              // Remove selected keys
-              const removed: string[] = [];
-              for (const k of keys) {
-                const i = order.indexOf(k);
-                if (i !== -1) removed.push(...order.splice(i, 1));
-              }
-              // Recalculate insert position after removal
-              let insertAt = order.findIndex((k) => group.modKeys.includes(k));
-              if (insertAt === -1) insertAt = order.length;
-              order.splice(insertAt, 0, ...removed);
-              setDisplayOrder(order);
-            }
+        // Group membership changes only (keys stay in displayOrder either way)
+        if (targetGroupId && targetGroupId !== sourceGroupId) {
+          // Enter different group
+          for (const k of movedKeys) {
+            handleMoveToGroup(k, targetGroupId);
           }
-
-          // Group operations for multi-drag
-          if (targetGroupId && targetGroupId !== ds.sourceGroupId && !ds.slotBeforeGroupId) {
-            // Dropped onto a different group → move all selected mods to that group
-            const order = displayOrderRef.current;
-            for (const k of keys) {
-              handleMoveToGroup(k, targetGroupId, order);
-            }
-          } else if (ds.exitingGroup) {
-            // Block exited its group → ungroup all selected mods
-            const order = displayOrderRef.current;
-            for (const k of keys) {
-              handleMoveToGroup(k, null, order);
-            }
+        } else if (sourceGroupId && !targetGroupId) {
+          // Exit group
+          for (const k of movedKeys) {
+            handleMoveToGroup(k, null);
           }
+        }
+        // (staying in same group: no membership change needed — moveKeysInDisplayOrder
+        //  already handled the intra-group reorder via displayOrder position)
 
-          // Clear multi-selection state after drag
+        // Clear multi-selection after drag
+        if (isMulti) {
           useModStore.getState().clearSelection();
-
-          dragOverGroupRef.current = null;
-          setDragOverGroupId(null);
-          return;
         }
 
-        // ── Single-item drag (existing logic) ──
-        const effectiveTargetIdx = ds.slotBeforeGroupId
-          ? (() => {
-              const group = groups.find((g) => g.id === ds.slotBeforeGroupId);
-              if (!group) return null;
-              let minIdx = displayOrder.length;
-              for (const mk of group.modKeys) {
-                const idx = displayOrder.indexOf(mk);
-                if (idx !== -1 && idx < minIdx) minIdx = idx;
-              }
-              return minIdx < displayOrder.length ? minIdx : null;
-            })()
-          : ds.sourceIdx !== ds.currentIdx
-            ? ds.currentIdx
-            : null;
-
-        // Skip reorder only for true cross-group moves (grouped card →
-        // DIFFERENT group). Same-group reorder, exiting, and ungrouped→group
-        // all need displayOrder to reflect the cursor position.
-        const crossGroupMove = !!(targetGroupId && ds.sourceGroupId && targetGroupId !== ds.sourceGroupId);
-        if (!crossGroupMove && effectiveTargetIdx !== null) {
-          setDisplayOrder((prev) => {
-            const next = [...prev];
-            const [item] = next.splice(ds.sourceIdx, 1);
-            const adjustedIdx = effectiveTargetIdx > ds.sourceIdx ? effectiveTargetIdx - 1 : effectiveTargetIdx;
-            next.splice(adjustedIdx, 0, item);
-            return next;
-          });
-        }
-
-        if (targetGroupId && targetGroupId !== ds.sourceGroupId && !ds.slotBeforeGroupId) {
-          // Dropped onto a DIFFERENT group (or entering from ungrouped) →
-          // move card to that group. Skip when slotBeforeGroupId is set —
-          // the card is snapped to a group boundary, not entering the group.
-          handleMoveToGroup(ds.sourceKey, targetGroupId, displayOrderRef.current);
-        } else if (ds.exitingGroup) {
-          // Cursor left the source group boundary → move card out of the group
-          handleMoveToGroup(ds.sourceKey, null, displayOrderRef.current);
-        }
-        // else: within-group reorder — stay in group, only setDisplayOrder was called
         dragOverGroupRef.current = null;
         setDragOverGroupId(null);
+        setLineIndented(false);
       } else {
         refs.preventClickRef.current = false;
         setDragOverGroupId(null);
+        setLineIndented(false);
       }
     };
 
-    // ── shared: attach/detach listeners ──
+    // Attach/detach listeners
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
     return () => {
@@ -516,6 +427,7 @@ export function useCardDrag({
   return {
     dragState,
     dragOverGroupId,
+    lineIndented,
     handleDragMouseDown,
   };
 }

@@ -112,7 +112,13 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
           .map((m) => [`${m.source}_${m.fileId}`, m.currentSettings])
       ),
       groups: appStore.groups,
-      groupOrder: appStore.groupOrder,
+      displayOrder: (() => {
+        try {
+          const raw = localStorage.getItem("twm-filter-prefs");
+          if (raw) return JSON.parse(raw).displayOrder ?? [];
+        } catch { /* ignore */ }
+        return [];
+      })(),
       modMeta: Object.fromEntries(
         mods.map((m) => {
           const key = `${m.source}_${m.fileId}`;
