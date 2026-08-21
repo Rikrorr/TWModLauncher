@@ -1,49 +1,51 @@
 /**
- * Parse and render text with <color=#RRGGBB>text</color> markup.
- * Returns React fragment with styled spans.
+ * Render Unity-style rich text markup into styled React elements.
+ * Supports <color=#RRGGBB|name>, <b>, <i>, <size=N> — nested and multi-line.
+ * Unknown or mismatched tags are shown literally; unclosed known tags apply
+ * their style to the rest of the text (Unity semantics).
  */
-import { Fragment } from "react";
+import { Fragment, type CSSProperties, type ReactNode } from "react";
+import {
+  parseRichText,
+  type RichStyle,
+  type RichTextNode,
+} from "./richTextParser";
 
-interface Segment {
-  text: string;
-  color?: string;
+function styleToCss(style: RichStyle): CSSProperties {
+  const css: CSSProperties = {};
+  if (style.color) css.color = style.color;
+  if (style.bold) css.fontWeight = "bold";
+  if (style.italic) css.fontStyle = "italic";
+  if (style.fontSize) css.fontSize = style.fontSize;
+  return css;
 }
 
-function parseColorTags(raw: string): Segment[] {
-  const segments: Segment[] = [];
-  const re = /<color=([#\w]+)>(.*?)<\/color>/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = re.exec(raw)) !== null) {
-    if (match.index > lastIndex) {
-      segments.push({ text: raw.slice(lastIndex, match.index) });
-    }
-    segments.push({ text: match[2], color: match[1] });
-    lastIndex = match.index + match[0].length;
+function renderNode(node: RichTextNode, key: number): ReactNode {
+  const children = node.children.map((child, i) =>
+    typeof child === "string" ? child : renderNode(child, i),
+  );
+  const css = styleToCss(node.style);
+  if (Object.keys(css).length > 0) {
+    return (
+      <span key={key} style={css}>
+        {children}
+      </span>
+    );
   }
-  if (lastIndex < raw.length) {
-    segments.push({ text: raw.slice(lastIndex) });
-  }
-  return segments;
+  return <Fragment key={key}>{children}</Fragment>;
 }
 
-export function renderColoredText(text: string): React.ReactNode {
+export function renderColoredText(text: string): ReactNode {
   if (!text) return text;
-  const segments = parseColorTags(text);
-  if (segments.length === 0) return text;
-  if (segments.length === 1 && !segments[0].color) return text;
-
+  const root = parseRichText(text);
+  // No markup → return the original string unchanged.
+  if (root.children.length === 1 && typeof root.children[0] === "string") {
+    return text;
+  }
   return (
     <Fragment>
-      {segments.map((seg, i) =>
-        seg.color ? (
-          <span key={i} style={{ color: seg.color }}>
-            {seg.text}
-          </span>
-        ) : (
-          <Fragment key={i}>{seg.text}</Fragment>
-        ),
+      {root.children.map((child, i) =>
+        typeof child === "string" ? child : renderNode(child, i),
       )}
     </Fragment>
   );

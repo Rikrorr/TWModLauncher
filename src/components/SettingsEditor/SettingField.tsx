@@ -1,4 +1,6 @@
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { ModSettingDef } from "../../lib/luaParser";
+import { renderColoredText } from "../../utils/renderColoredText";
 
 interface Props {
   setting: ModSettingDef;
@@ -16,10 +18,12 @@ export default function SettingField({ setting, value, onChange }: Props) {
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <label className="text-sm font-medium text-slate-200 block truncate">
-            {setting.displayName || setting.key}
+            {renderColoredText(setting.displayName || setting.key)}
           </label>
           {setting.description && (
-            <p className="text-xs text-slate-500 mt-0.5">{setting.description}</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {renderColoredText(setting.description)}
+            </p>
           )}
         </div>
         <div className="shrink-0">
@@ -40,6 +44,13 @@ export default function SettingField({ setting, value, onChange }: Props) {
               value={value}
               onChange={handleChange}
               options={setting.options ?? {}}
+            />
+          )}
+          {setting.settingType === "InputField" && (
+            <InputField
+              value={value}
+              defaultValue={setting.defaultValue}
+              onChange={handleChange}
             />
           )}
         </div>
@@ -134,5 +145,75 @@ function DropdownField({
         ))
       )}
     </select>
+  );
+}
+
+/**
+ * Single-line text input for SettingType = "InputField".
+ * Numeric mode (default value is a number): filters non-numeric characters,
+ * commits a parsed number on valid input, and reverts to the last committed
+ * value on blur when the field is empty or invalid.
+ */
+function InputField({
+  value,
+  defaultValue,
+  onChange,
+}: {
+  value: unknown;
+  defaultValue: unknown;
+  onChange: (v: string | number) => void;
+}) {
+  const numeric = typeof defaultValue === "number";
+  const initText = (v: unknown) => String(v ?? "");
+  const [text, setText] = useState(() => initText(value ?? defaultValue));
+  const lastCommitRef = useRef<unknown>(value ?? defaultValue);
+
+  // Reflect external value changes (profile load, default fallback, etc.)
+  useEffect(() => {
+    if (value !== lastCommitRef.current) {
+      setText(initText(value ?? defaultValue));
+      lastCommitRef.current = value ?? defaultValue;
+    }
+  }, [value, defaultValue]);
+
+  const commit = (raw: string) => {
+    if (numeric) {
+      const n = Number(raw);
+      if (raw.trim() !== "" && Number.isFinite(n)) {
+        lastCommitRef.current = n;
+        onChange(n);
+      }
+    } else {
+      lastCommitRef.current = raw;
+      onChange(raw);
+    }
+  };
+
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const raw = numeric
+      ? e.target.value.replace(/[^0-9.\-]/g, "")
+      : e.target.value;
+    setText(raw);
+    commit(raw);
+  };
+
+  const handleBlur = () => {
+    if (numeric) {
+      const n = Number(text);
+      if (text.trim() === "" || !Number.isFinite(n)) {
+        setText(initText(lastCommitRef.current));
+      }
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode={numeric ? "decimal" : "text"}
+      value={text}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      className="w-40 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+    />
   );
 }
