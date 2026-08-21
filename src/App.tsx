@@ -454,6 +454,12 @@ function App() {
   };
 
   const handleSelectMod = useCallback(async (key: string) => {
+    // ★ v2: scheme-outside mods are read-only — config page locked
+    const memberKeys = useAppStore.getState().activeSchemeModKeys;
+    if (memberKeys && !memberKeys.includes(key)) {
+      setLastMessage("该 Mod 未加入当前方案，请先在可用池中将其加入方案");
+      return;
+    }
     if (useAppStore.getState().isDirty) {
       await handleSaveAll();
     }
