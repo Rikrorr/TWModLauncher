@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { save, open as openDialog, ask } from "@tauri-apps/plugin-dialog";
 import { writeFile, readFile } from "../../lib/tauriApi";
 import { useCollectionStore } from "../../store/useCollectionStore";
@@ -24,20 +24,16 @@ export default function CollectionPanel({ mods, onClose, onCreateSchemeFromColle
   const importJson = useCollectionStore((s) => s.importJson);
   const exportJson = useCollectionStore((s) => s.exportJson);
 
-  const [showCreate, setShowCreate] = useState(false);
-  const [name, setName] = useState("");
+  // ★ v2: when opened from list multi-select, prefill the create form
+  // (seed consumed once at mount via initializer — no effect setState)
+  const [showCreate, setShowCreate] = useState(() => !!(seed && seed.modKeys.length > 0));
+  const [name, setName] = useState(() =>
+    seed && seed.modKeys.length > 0 ? `集合 ${new Date().toLocaleDateString("zh-CN")}` : "",
+  );
   const [desc, setDesc] = useState("");
   const [message, setMessage] = useState<{ text: string; type: "ok" | "error" } | null>(null);
   const [missingMods, setMissingMods] = useState<Map<string, ModMeta> | null>(null);
   const [pendingColId, setPendingColId] = useState<string | null>(null);
-
-  // ★ v2: when opened from list multi-select, prefill the create form
-  useEffect(() => {
-    if (seed && seed.modKeys.length > 0) {
-      setShowCreate(true);
-      setName(`集合 ${new Date().toLocaleDateString("zh-CN")}`);
-    }
-  }, [seed]);
 
   const flash = (text: string, type: "ok" | "error" = "ok") => {
     setMessage({ text, type });

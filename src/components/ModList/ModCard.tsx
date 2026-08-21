@@ -113,6 +113,7 @@ export default function ModCard({
     : "";
 
   const sourceLabel = mod.source === 1 ? "创意工坊" : "本地";
+  const sourceIcon = mod.source === 1 ? "⬇" : "🗂";
   const sourceColor =
     mod.source === 1
       ? "bg-blue-900/60 text-blue-300 border-blue-700"
@@ -149,8 +150,8 @@ export default function ModCard({
         <div className="flex-1 min-w-0" />
 
         {/* 2. Source badge */}
-        <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${sourceColor}`}>
-          {sourceLabel}
+        <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${sourceColor}`} title={sourceLabel}>
+          {sourceIcon}
         </span>
 
         {/* 3. Type tags */}
@@ -313,8 +314,8 @@ export default function ModCard({
           >
             {renderColoredText(mod.title)}
           </h3>
-          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${sourceColor}`}>
-            {sourceLabel}
+          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${sourceColor}`} title={sourceLabel}>
+            {sourceIcon} {sourceLabel}
           </span>
           {/* ★ v2: conflict badge */}
           {conflicts && conflicts.length > 0 && (
@@ -350,6 +351,26 @@ export default function ModCard({
             <span className="text-slate-500">更新 {mod.updatedAt}</span>
           )}
         </div>
+
+        {/* ★ v2: mod local directory — shown with copy affordance */}
+        {viewMode === "detailed" && mod.dirPath && (
+          <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-600">
+            <span className="truncate max-w-56" title={mod.dirPath}>
+              {mod.dirPath}
+            </span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(mod.dirPath).catch(() => {});
+                message("目录路径已复制", { title: "复制", kind: "info" });
+              }}
+              title="复制目录路径"
+              className="text-slate-600 hover:text-slate-300 cursor-pointer shrink-0"
+            >
+              📋
+            </button>
+          </div>
+        )}
 
         {viewMode === "detailed" && mod.description && (
           <p

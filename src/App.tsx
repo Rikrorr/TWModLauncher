@@ -13,6 +13,7 @@ import {
   loadConfig,
   saveConfig,
   openLogDir,
+  saveProfile,
 } from "./lib/tauriApi";
 import { collectModSettingsData, patchModSettingsLua, generateModSettingsLua, generateSettingsLua } from "./utils/generateModSettings";
 import { useAppStore } from "./store/useAppStore";
@@ -530,9 +531,8 @@ function App() {
             .map((k) => [k, noteStore.notes[k].trim()]),
         ),
       };
-      import("./lib/tauriApi").then((api) =>
-        api.saveProfile(data.name, JSON.stringify(saveData, null, 2)).catch(() => {}),
-      );
+      // Auto-save the new scheme
+      saveProfile(data.name, JSON.stringify(saveData, null, 2)).catch(() => {});
     },
     [handleProfileLoad, setLastMessage],
   );

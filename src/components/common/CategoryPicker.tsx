@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCategoryStore, persistCategories } from "../../store/useCategoryStore";
 
 interface Props {
@@ -20,7 +20,7 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
   const [manageMode, setManageMode] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  const current = modCats[modKey] ?? [];
+  const current = useMemo(() => modCats[modKey] ?? [], [modCats, modKey]);
 
   const toggleCat = useCallback(
     (catId: string) => {
