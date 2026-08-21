@@ -17,6 +17,8 @@ import {
 import { collectModSettingsData, patchModSettingsLua, generateModSettingsLua, generateSettingsLua } from "./utils/generateModSettings";
 import { useAppStore } from "./store/useAppStore";
 import { useModStore } from "./store/useModStore";
+import { useCategoryStore } from "./store/useCategoryStore";
+import { useNoteStore } from "./store/useNoteStore";
 import { useModScanner } from "./hooks/useModScanner";
 import type { ProfileData } from "./lib/types";
 import ModList from "./components/ModList/ModList";
@@ -45,6 +47,12 @@ function App() {
   const setMods = useModStore((s) => s.setMods);
   const updateModSettings = useModStore((s) => s.updateModSettings);
   const { scan, rescan } = useModScanner();
+
+  // ★ v2: hydrate global category/note stores on startup
+  useEffect(() => {
+    useCategoryStore.getState().hydrate();
+    useNoteStore.getState().hydrate();
+  }, []);
 
   const [gameRunning, setGameRunning] = useState(false);
   const [hoverButton, setHoverButton] = useState(false);
@@ -152,6 +160,11 @@ function App() {
   const handleLaunch = async () => {
     if (!gamePath || gameRunning) return;
     setLaunchError(null);
+    // ★ v2: safety gate — auto-sync unsaved changes before launching
+    if (useAppStore.getState().isDirty) {
+      setLastMessage("检测到未保存的更改，先同步再启动...");
+      await handleSaveAll();
+    }
     try {
       await launchGame(gamePath);
       setGameRunning(true);
@@ -163,6 +176,11 @@ function App() {
   const handleLaunchSteam = async () => {
     if (gameRunning) return;
     setLaunchError(null);
+    // ★ v2: safety gate — auto-sync unsaved changes before launching
+    if (useAppStore.getState().isDirty) {
+      setLastMessage("检测到未保存的更改，先同步再启动...");
+      await handleSaveAll();
+    }
     try {
       await launchGameSteam();
       setGameRunning(true);
@@ -353,22 +371,36 @@ function App() {
   }, [gamePath, templateRaw, saving, setLastMessage, setDirty]);
 
   const handleProfileLoad = async (data: ProfileData) => {
-    // Build lookup for enabled mods and order from profile
+    // ★ v2: member whitelist — scheme-outside mods are forced disabled
+    const memberSet = new Set(data.modKeys ?? []);
     const enabledSet = new Set(data.enabledMods);
     const orderMap = data.modOrder ?? {};
     const settingsMap = data.modSettings ?? {};
 
     const updated = mods.map((m) => {
       const key = `${m.source}_${m.fileId}`;
+      const inScheme = memberSet.has(key);
       return {
         ...m,
-        enabled: enabledSet.has(key),
-        order: orderMap[key] ?? m.order,
-        currentSettings: settingsMap[key] ?? m.currentSettings,
+        enabled: inScheme && enabledSet.has(key),
+        order: inScheme ? (orderMap[key] ?? m.order) : 0,
+        currentSettings: inScheme ? (settingsMap[key] ?? m.currentSettings) : m.currentSettings,
       };
     });
 
     setMods(updated);
+
+    // ★ v2: merge scheme-carried categories/notes into global stores (scheme wins)
+    if (data.modCategories && Object.keys(data.modCategories).length > 0) {
+      const catState = useCategoryStore.getState();
+      const merged = { ...catState.modCats, ...data.modCategories };
+      useCategoryStore.setState({ modCats: merged });
+    }
+    if (data.modNotes && Object.keys(data.modNotes).length > 0) {
+      const noteState = useNoteStore.getState();
+      const merged = { ...noteState.notes, ...data.modNotes };
+      useNoteStore.setState({ notes: merged });
+    }
 
     // Restore groups and displayOrder if present
     if (data.version >= 1 && data.groups) {
@@ -393,15 +425,27 @@ function App() {
       } catch { /* ignore */ }
     }
 
-    setLastMessage(`方案 "${data.name}" 已加载（${data.enabledMods.length} 个已启用），请点击同步保存`);
-
-    // Mark dirty so user knows to sync — also track per-mod settings that changed
-    if (settingsMap && Object.keys(settingsMap).length > 0) {
-      for (const key of Object.keys(settingsMap)) {
-        useAppStore.getState().addDirtyModSetting(key);
-      }
+    // ★ v2: activating a scheme writes to disk immediately (decision A1)
+    useAppStore.getState().setActiveSchemeName(data.name);
+    useAppStore.getState().setActiveSchemeModKeys(data.modKeys ?? []);
+    setLastMessage(`方案 "${data.name}" 已激活，正在同步...`);
+    const activePath = useAppStore.getState().gamePath;
+    if (!activePath) {
+      setLastMessage(`方案 "${data.name}" 已激活（未检测到游戏路径，未同步）`);
+      return;
     }
-    useAppStore.getState().setDirty(true);
+    try {
+      const currentMods = useModStore.getState().mods;
+      const sd = collectModSettingsData(currentMods);
+      const lua = templateRaw
+        ? patchModSettingsLua(templateRaw, sd)
+        : generateModSettingsLua(sd);
+      await writeModSettings(activePath, lua);
+      useAppStore.getState().setDirty(false);
+      setLastMessage(`方案 "${data.name}" 已激活并同步`);
+    } catch (e) {
+      setLastMessage(`方案 "${data.name}" 激活失败（同步写入错误）: ${String(e)}`);
+    }
   };
 
   const handleSelectMod = useCallback(async (key: string) => {

@@ -106,6 +106,8 @@ export interface ProfileData {
   name: string;
   createdAt: string;
   gamePath: string;
+  /** ★ v2: Scheme member whitelist — all mods this scheme contains */
+  modKeys: string[];
   enabledMods: string[];
   modOrder: Record<string, number>;
   modSettings: Record<string, Record<string, unknown>>;
@@ -117,4 +119,42 @@ export interface ProfileData {
   groupOrder?: string[];
   /** Mod metadata keyed by modKey, for missing-mod detection on import */
   modMeta: Record<string, ModMeta>;
+  /** ★ v2: Per-scheme user categories (propagated on export/share) */
+  modCategories?: Record<string, string[]>;
+  /** ★ v2: Per-scheme user notes (propagated on export/share) */
+  modNotes?: Record<string, string>;
+}
+
+/** v1 legacy profile shape (for migration) */
+export interface ProfileDataV1 {
+  version?: number;
+  name: string;
+  createdAt: string;
+  gamePath: string;
+  enabledMods: string[];
+  modOrder?: Record<string, number>;
+  modSettings?: Record<string, Record<string, unknown>>;
+  groups?: ModGroup[];
+  displayOrder?: string[];
+  groupOrder?: string[];
+  modMeta?: Record<string, ModMeta>;
+}
+
+/** Offline collection — a reusable bundle of mods (scheme template) */
+export interface ModCollection {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Member mod keys ("source_fileId") */
+  modKeys: string[];
+  /** Optional preset group structure (name → members), for fast scheme assembly */
+  groups?: { name: string; modKeys: string[] }[];
+  /** Optional preset enabled subset (defaults to all members) */
+  enabledMods?: string[];
+  /** Mod metadata for missing-mod detection on import */
+  modMeta: Record<string, ModMeta>;
+  /** Collection schema version */
+  version: number;
 }

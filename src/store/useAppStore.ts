@@ -52,6 +52,10 @@ interface AppState {
   isDirty: boolean;
   /** Mod keys with unsaved per-mod Settings.Lua changes */
   dirtyModSettings: string[];
+  /** ★ v2: Name of the currently active scheme (null = none active) */
+  activeSchemeName: string | null;
+  /** ★ v2: Member modKeys of the active scheme (null = no scheme active) */
+  activeSchemeModKeys: string[] | null;
 
   setGamePath: (path: string, source: "auto" | "manual") => void;
   setDetecting: (v: boolean) => void;
@@ -64,6 +68,10 @@ interface AppState {
   addDirtyModSetting: (key: string) => void;
   clearDirtyModSettings: () => void;
   removeDirtyModSettings: (keys: string[]) => void;
+  /** ★ v2: Set the active scheme name */
+  setActiveSchemeName: (name: string | null) => void;
+  /** ★ v2: Set the active scheme member modKeys */
+  setActiveSchemeModKeys: (keys: string[] | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -76,6 +84,8 @@ export const useAppStore = create<AppState>((set) => ({
   groups: initialGroups,
   isDirty: false,
   dirtyModSettings: [],
+  activeSchemeName: null,
+  activeSchemeModKeys: null,
 
   setGamePath: (path, source) =>
     set({ gamePath: path, pathSource: source, error: null }),
@@ -85,7 +95,7 @@ export const useAppStore = create<AppState>((set) => ({
   setTemplateRaw: (raw) => set({ templateRaw: raw }),
   setGroups: (groups) => set((state) => ({ groups: typeof groups === "function" ? groups(state.groups) : groups })),
   clearPath: () =>
-    set({ gamePath: null, pathSource: "none", error: null, dirtyModSettings: [] }),
+    set({ gamePath: null, pathSource: "none", error: null, dirtyModSettings: [], activeSchemeName: null, activeSchemeModKeys: null }),
   setDirty: (v) => set({ isDirty: v }),
   addDirtyModSetting: (key) =>
     set((s) => ({
@@ -98,4 +108,6 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => ({
       dirtyModSettings: s.dirtyModSettings.filter((k) => !keys.includes(k)),
     })),
+  setActiveSchemeName: (name) => set({ activeSchemeName: name }),
+  setActiveSchemeModKeys: (keys) => set({ activeSchemeModKeys: keys }),
 }));

@@ -41,6 +41,10 @@ export default function ModList({ saving, onSelectMod }: Props) {
   const setDirty = useAppStore((s) => s.setDirty);
   const groups = useAppStore((s) => s.groups);
   const setGroups = useAppStore((s) => s.setGroups);
+  // ★ v2: active scheme member whitelist for dual-view (members + pool)
+  const activeSchemeName = useAppStore((s) => s.activeSchemeName);
+  const activeSchemeModKeys = useAppStore((s) => s.activeSchemeModKeys);
+  const setActiveSchemeModKeys = useAppStore((s) => s.setActiveSchemeModKeys);
 
   // ── Multi-select ──────────────────────────────────────────────────────────
   const selectedModKeys = useModStore((s) => s.selectedModKeys);
@@ -346,11 +350,17 @@ export default function ModList({ saving, onSelectMod }: Props) {
 
   const handleOrderChange = useCallback(
     (key: string, order: number) => {
+      // ★ v2: scheme-outside mods are read-only
+      const memberSet = activeSchemeModKeys ? new Set(activeSchemeModKeys) : null;
+      if (memberSet && !memberSet.has(key)) {
+        setLastMessage("该 Mod 未加入当前方案，无法调整顺序");
+        return;
+      }
       clearSelection();
       setModOrder(key, order);
       setDirty(true);
     },
-    [setModOrder, setDirty, clearSelection],
+    [setModOrder, setDirty, clearSelection, activeSchemeModKeys, setLastMessage],
   );
 
   const handleApplyOrder = useCallback(() => {
@@ -445,11 +455,18 @@ export default function ModList({ saving, onSelectMod }: Props) {
   // ── Toggle handler ───────────────────────────────────────────────────────
   const handleToggle = useCallback(
     (fileId: number, enabled: boolean) => {
+      // ★ v2: scheme-outside mods are read-only — cannot be toggled
+      const key = `${useModStore.getState().mods.find((m) => m.fileId === fileId)?.source ?? 0}_${fileId}`;
+      const memberSet = activeSchemeModKeys ? new Set(activeSchemeModKeys) : null;
+      if (memberSet && !memberSet.has(key)) {
+        setLastMessage("该 Mod 未加入当前方案，请在方案内添加后再启用");
+        return;
+      }
       clearSelection();
       toggleMod(fileId, enabled);
       setDirty(true);
     },
-    [toggleMod, setDirty, clearSelection],
+    [toggleMod, setDirty, clearSelection, activeSchemeModKeys, setLastMessage],
   );
 
   // ── Selection click handlers ──────────────────────────────────────────────
@@ -596,6 +613,21 @@ export default function ModList({ saving, onSelectMod }: Props) {
     return result;
   }, [mods, filter.search, filter.enabledFilter, fuse, filter.activeCategories, filter.activeTags, filter.tagMode, filter.displayOrder]);
 
+  // ★ v2: split filtered mods into scheme members + pool (dual-view).
+  // Without an active scheme, everything is a "member" (legacy global mode).
+  const schemeMemberKeys = useMemo(() => {
+    if (!activeSchemeModKeys) return null;
+    return new Set(activeSchemeModKeys);
+  }, [activeSchemeModKeys]);
+  const schemeFiltered = schemeMemberKeys
+    ? filtered.filter((m) => schemeMemberKeys.has(`${m.source}_${m.fileId}`))
+    : filtered;
+  const poolFiltered = schemeMemberKeys
+    ? filtered.filter((m) => !schemeMemberKeys.has(`${m.source}_${m.fileId}`))
+    : [];
+  // Pool collapse state (default collapsed)
+  const [poolOpen, setPoolOpen] = useState(false);
+
   const enabledCount = mods.filter((m) => m.enabled).length;
 
   // ── Refs for context-menu position lookup ───────────────────────────────
@@ -652,7 +684,7 @@ export default function ModList({ saving, onSelectMod }: Props) {
   const renderItems = buildRenderItems(
     filter.displayOrder,
     groups,
-    filtered,
+    schemeFiltered,
     modGroupMap,
     groupCreateState,
   );
@@ -724,8 +756,10 @@ export default function ModList({ saving, onSelectMod }: Props) {
         }}
       >
         <div ref={listRef}>
-          {filtered.length === 0 ? (
-            <p className="text-sm text-slate-500 text-center py-8">没有匹配的 Mod</p>
+          {schemeFiltered.length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-8">
+              {activeSchemeName ? "当前方案暂无成员 Mod，请从底部可用池添加" : "没有匹配的 Mod"}
+            </p>
           ) : (
             renderItems.map((item, index) => {
               // Group creation placeholder — yellow insertion line
@@ -861,6 +895,60 @@ export default function ModList({ saving, onSelectMod }: Props) {
             </span>
             {saving && <span className="text-blue-400">保存中...</span>}
           </div>
+
+          {/* ★ v2: Available pool (scheme-outside mods) — collapsed read-only section */}
+          {activeSchemeName && (
+            <div className="mt-4 border-t border-slate-700/60 pt-2">
+              <button
+                onClick={() => setPoolOpen((v) => !v)}
+                className="flex items-center gap-2 text-xs text-slate-400 hover:text-slate-200
+                           px-1 py-1.5 rounded cursor-pointer transition-colors w-full text-left"
+              >
+                <span>{poolOpen ? "▼" : "▶"}</span>
+                <span>可用池</span>
+                <span className="text-slate-600">
+                  （{poolFiltered.length} 个已安装未加入方案）
+                </span>
+              </button>
+              {poolOpen && (
+                <div className="space-y-1.5 mt-1">
+                  {poolFiltered.length === 0 ? (
+                    <p className="text-xs text-slate-600 px-1 py-2">所有已安装 Mod 均已加入方案</p>
+                  ) : (
+                    poolFiltered.map((m) => {
+                      const key = `${m.source}_${m.fileId}`;
+                      return (
+                        <div
+                          key={key}
+                          className="flex items-center gap-2 rounded-lg border border-slate-700/50
+                                     bg-slate-800/30 px-3 py-1.5 opacity-70"
+                        >
+                          <span className="text-xs text-slate-400 truncate min-w-0 flex-1">
+                            {m.title}
+                          </span>
+                          <span className="text-[10px] text-slate-500 shrink-0">
+                            {m.source === 1 ? "工坊" : "本地"}
+                          </span>
+                          <button
+                            onClick={() => {
+                              // Add to scheme: enable mod + join member set
+                              toggleMod(m.fileId, true);
+                              setDirty(true);
+                              setActiveSchemeModKeys([...(activeSchemeModKeys ?? []), key]);
+                            }}
+                            className="text-[10px] px-2 py-0.5 bg-blue-600 hover:bg-blue-500
+                                       text-white rounded cursor-pointer shrink-0"
+                          >
+                            加入方案
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

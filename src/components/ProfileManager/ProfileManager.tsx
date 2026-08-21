@@ -9,35 +9,17 @@ import {
   readFile,
 } from "../../lib/tauriApi";
 import { useAppStore } from "../../store/useAppStore";
-import type { ModInfo, ModMeta, ProfileData, ProfileMeta } from "../../lib/types";
+import { useCategoryStore } from "../../store/useCategoryStore";
+import { useNoteStore } from "../../store/useNoteStore";
+import type { ModInfo, ModMeta, ProfileData, ProfileDataV1, ProfileMeta } from "../../lib/types";
 import MissingModsDialog from "./MissingModsDialog";
 import { createLogger } from "../../lib/logger";
+import { detectMissingMods, isProfileV2, migrateProfileV1 } from "../../utils/migrateProfile";
 
 interface Props {
   gamePath: string;
   mods: ModInfo[];
   onLoad: (data: ProfileData) => void;
-}
-
-/** Compare a profile's referenced mod keys against the currently installed mods.
- *  Returns a Map of missing mod keys -> ModMeta (only for mods that have metadata). */
-function detectMissingMods(data: ProfileData, mods: ModInfo[]): Map<string, ModMeta> {
-  const installedKeys = new Set(
-    mods.map((m) => `${m.source}_${m.fileId}`)
-  );
-  const referencedKeys = new Set<string>();
-  data.enabledMods.forEach((k) => referencedKeys.add(k));
-  Object.keys(data.modOrder ?? {}).forEach((k) => referencedKeys.add(k));
-  Object.keys(data.modSettings ?? {}).forEach((k) => referencedKeys.add(k));
-  (data.groups ?? []).forEach((g) => g.modKeys.forEach((k) => referencedKeys.add(k)));
-
-  const missing = new Map<string, ModMeta>();
-  for (const key of referencedKeys) {
-    if (!installedKeys.has(key) && data.modMeta?.[key]) {
-      missing.set(key, data.modMeta[key]);
-    }
-  }
-  return missing;
 }
 
 const log = createLogger("ProfileManager");
@@ -51,6 +33,7 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
   const [message, setMessage] = useState<{ text: string; type: "info" | "ok" | "error" } | null>(null);
   const [missingMods, setMissingMods] = useState<Map<string, ModMeta> | null>(null);
   const [pendingLoad, setPendingLoad] = useState<ProfileData | null>(null);
+  const activeSchemeName = useAppStore((s) => s.activeSchemeName);
 
   const refresh = async () => {
     try {
@@ -95,11 +78,22 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
     }
 
     const appStore = useAppStore.getState();
+    const catStore = useCategoryStore.getState();
+    const noteStore = useNoteStore.getState();
+    const allKeys = mods.map((m) => `${m.source}_${m.fileId}`);
+    // v2 member whitelist: union of enabled + ordered + configured + grouped mods
+    const modKeys = [...new Set([
+      ...mods.filter((m) => m.enabled).map((m) => `${m.source}_${m.fileId}`),
+      ...mods.filter((m) => m.order > 0).map((m) => `${m.source}_${m.fileId}`),
+      ...mods.filter((m) => Object.keys(m.currentSettings).length > 0).map((m) => `${m.source}_${m.fileId}`),
+      ...appStore.groups.flatMap((g) => g.modKeys),
+    ])];
     const data: ProfileData = {
-      version: 1,
+      version: 2,
       name,
       createdAt: new Date().toISOString(),
       gamePath,
+      modKeys,
       enabledMods: mods
         .filter((m) => m.enabled)
         .map((m) => `${m.source}_${m.fileId}`),
@@ -132,6 +126,17 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
           return [key, meta];
         })
       ),
+      // ★ v2: carry global categories/notes into the scheme for propagation
+      modCategories: Object.fromEntries(
+        allKeys
+          .filter((k) => (catStore.modCats[k] ?? []).length > 0)
+          .map((k) => [k, catStore.modCats[k]]),
+      ),
+      modNotes: Object.fromEntries(
+        allKeys
+          .filter((k) => noteStore.notes[k]?.trim())
+          .map((k) => [k, noteStore.notes[k].trim()]),
+      ),
     };
     try {
       await saveProfile(name, JSON.stringify(data, null, 2));
@@ -149,13 +154,16 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
     try {
       const raw = await loadProfile(name);
 
-      let data: ProfileData;
+      let parsed: ProfileData | ProfileDataV1;
       try {
-        data = JSON.parse(raw) as ProfileData;
+        parsed = JSON.parse(raw);
       } catch {
         flash("方案文件已损坏，无法加载");
         return;
       }
+
+      // Migrate v1 → v2 on load (in-memory only; saved back on next save)
+      const data: ProfileData = isProfileV2(parsed) ? parsed : migrateProfileV1(parsed);
 
       const missing = detectMissingMods(data, mods);
       if (missing.size > 0) {
@@ -166,6 +174,7 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
       }
 
       onLoad(data);
+      useAppStore.getState().setActiveSchemeName(data.name);
       flash(`方案 "${name}" 已加载`);
       setOpen(false);
     } catch (e) {
@@ -191,6 +200,23 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
   const handleExport = async (name: string) => {
     try {
       const raw = await loadProfile(name);
+      // Privacy prompt: warn when the scheme carries user notes/categories
+      try {
+        const data = JSON.parse(raw);
+        const hasUserData =
+          (data.modNotes && Object.keys(data.modNotes).length > 0) ||
+          (data.modCategories && Object.keys(data.modCategories).length > 0);
+        if (hasUserData) {
+          const noteCount = Object.keys(data.modNotes ?? {}).length;
+          const catCount = Object.keys(data.modCategories ?? {}).length;
+          const ok = await ask(
+            `该方案包含 ${noteCount} 条备注与 ${catCount} 个 Mod 的分类信息。备注可能包含个人记录，导出/分享前请检查内容。`,
+            { title: "隐私提示", kind: "warning" },
+          );
+          if (!ok) return;
+        }
+      } catch { /* ignore — non-JSON handled below */ }
+
       const path = await save({
         defaultPath: `${name}.json`,
         filters: [{ name: "JSON", extensions: ["json"] }],
@@ -213,9 +239,9 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
       const path = selected as string;
       const raw = await readFile(path);
 
-      let data: ProfileData;
+      let data: ProfileData | ProfileDataV1;
       try {
-        data = JSON.parse(raw) as ProfileData;
+        data = JSON.parse(raw);
       } catch {
         flash("导入失败: 文件格式无效，请确认选择的是 JSON 方案文件");
         return;
@@ -226,34 +252,35 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
         return;
       }
 
-      // Version compatibility check
-      if (data.version !== undefined && data.version > 1) {
+      // Version compatibility check (v2 supported; v1 auto-migrated)
+      if (data.version !== undefined && data.version > 2) {
         flash(
-          `导入失败: 方案版本不兼容（文件版本 ${data.version}，当前支持版本 1）`,
+          `导入失败: 方案版本不兼容（文件版本 ${data.version}，当前支持版本 2）`,
         );
         return;
       }
+      const migrated: ProfileData = isProfileV2(data) ? data : migrateProfileV1(data);
 
       // Check for overwrite
-      const existing = profiles.find((p) => p.name === data.name);
+      const existing = profiles.find((p) => p.name === migrated.name);
       if (existing) {
         const confirmed = await ask(
-          `方案 "${data.name}" 已存在，是否覆盖？`,
+          `方案 "${migrated.name}" 已存在，是否覆盖？`,
           { title: "确认覆盖", kind: "warning" },
         );
         if (!confirmed) return;
       }
 
-      // Save to local store
-      await saveProfile(data.name, JSON.stringify(data, null, 2));
+      // Save to local store (as v2)
+      await saveProfile(migrated.name, JSON.stringify(migrated, null, 2));
       refresh();
 
-      const missing = detectMissingMods(data, mods);
+      const missing = detectMissingMods(migrated, mods);
       if (missing.size > 0) {
         setOpen(false);
         setMissingMods(missing);
       } else {
-        flashOk(`方案 "${data.name}" 已导入`);
+        flashOk(`方案 "${migrated.name}" 已导入`);
       }
     } catch (e) {
       flash(`导入失败: ${String(e)}`);
@@ -388,13 +415,19 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
                 暂无保存的方案
               </p>
             ) : (
-              profiles.map((p) => (
+              profiles.map((p) => {
+                const isActive = activeSchemeName === p.name;
+                return (
                 <div
                   key={p.name}
-                  className="flex items-center justify-between py-1.5
-                             hover:bg-slate-700/50 rounded px-1"
+                  className={`flex items-center justify-between py-1.5
+                             hover:bg-slate-700/50 rounded px-1 ${
+                               isActive ? "bg-blue-900/40 border border-blue-700/50" : ""
+                             }`}
                 >
-                  <span className="text-xs text-slate-300">{p.name}</span>
+                  <span className={`text-xs ${isActive ? "text-blue-300" : "text-slate-300"}`}>
+                    {isActive ? "● " : ""}{p.name}
+                  </span>
                   <span className="text-xs text-slate-500">
                     {p.modCount} Mod
                   </span>
@@ -424,7 +457,8 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
                     </button>
                   </div>
                 </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
