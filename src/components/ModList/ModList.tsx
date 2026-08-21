@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import Fuse from "fuse.js";
 import { useModStore } from "../../store/useModStore";
 import { useAppStore } from "../../store/useAppStore";
+import { useCategoryStore } from "../../store/useCategoryStore";
 import type { ModInfo, ModGroup } from "../../lib/types";
 import ModCard from "./ModCard";
 import ModFilterBar from "./ModFilterBar";
@@ -9,6 +10,8 @@ import ModGroupHeader from "./ModGroupHeader";
 import ModContextMenu from "./ModContextMenu";
 import GroupContextMenu from "./GroupContextMenu";
 import MultiContextMenu from "./MultiContextMenu";
+import CategoryPicker from "../common/CategoryPicker";
+import NoteEditor from "../common/NoteEditor";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { openInExplorer, openSteamWorkshop } from "../../lib/tauriApi";
 import { useModListState, type CategoryKey } from "./useModListState";
@@ -45,6 +48,8 @@ export default function ModList({ saving, onSelectMod }: Props) {
   const activeSchemeName = useAppStore((s) => s.activeSchemeName);
   const activeSchemeModKeys = useAppStore((s) => s.activeSchemeModKeys);
   const setActiveSchemeModKeys = useAppStore((s) => s.setActiveSchemeModKeys);
+  // ★ v2: user categories for the filter dropdown
+  const userCategories = useCategoryStore((s) => s.categories);
 
   // ── Multi-select ──────────────────────────────────────────────────────────
   const selectedModKeys = useModStore((s) => s.selectedModKeys);
@@ -68,6 +73,8 @@ export default function ModList({ saving, onSelectMod }: Props) {
     | { type: "multi"; x: number; y: number }
     | null;
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+  // ★ v2: mod-level popup triggered from context menu (category/note)
+  const [modPopup, setModPopup] = useState<{ modKey: string; kind: "category" | "note" } | null>(null);
 
   const handleDeleteGroup = useCallback(
     async (groupId: string) => {
@@ -599,6 +606,16 @@ export default function ModList({ saving, onSelectMod }: Props) {
           : result.filter((m) => [...filter.activeTags].every((t) => m.tagList.includes(t)));
     }
 
+    // ★ v2: user-category filter (AND across selected categories)
+    if (filter.activeCatIds.size > 0) {
+      const catState = useCategoryStore.getState();
+      result = result.filter((m) => {
+        const key = `${m.source}_${m.fileId}`;
+        const cats = new Set(catState.modCats[key] ?? []);
+        return [...filter.activeCatIds].every((cid) => cats.has(cid));
+      });
+    }
+
     if (filter.enabledFilter === "enabled") result = result.filter((m) => m.enabled);
     else if (filter.enabledFilter === "disabled") result = result.filter((m) => !m.enabled);
 
@@ -611,7 +628,7 @@ export default function ModList({ saving, onSelectMod }: Props) {
     });
 
     return result;
-  }, [mods, filter.search, filter.enabledFilter, fuse, filter.activeCategories, filter.activeTags, filter.tagMode, filter.displayOrder]);
+  }, [mods, filter.search, filter.enabledFilter, fuse, filter.activeCategories, filter.activeTags, filter.tagMode, filter.displayOrder, filter.activeCatIds]);
 
   // ★ v2: split filtered mods into scheme members + pool (dual-view).
   // Without an active scheme, everything is a "member" (legacy global mode).
@@ -746,6 +763,19 @@ export default function ModList({ saving, onSelectMod }: Props) {
         }
         onApplyOrder={handleApplyOrder}
         onGroupCreateMouseDown={handleGroupCreateMouseDown}
+        allUserCategories={userCategories}
+        activeCatIds={filter.activeCatIds}
+        onToggleCatId={(catId) =>
+          filter.setActiveCatIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(catId)) next.delete(catId);
+            else next.add(catId);
+            return next;
+          })
+        }
+        catFilterDropdownOpen={filter.catFilterDropdownOpen}
+        onToggleCatFilterDropdown={() => filter.setCatFilterDropdownOpen((v) => !v)}
+        catFilterDropdownRef={filter.catFilterDropdownRef}
       />
 
       {/* Scrollable cards area */}
@@ -981,6 +1011,8 @@ export default function ModList({ saving, onSelectMod }: Props) {
             onOpenInExplorer={() => openInExplorer(mod.dirPath).catch((e) => setLastMessage(String(e)))}
             onOpenWorkshop={() => openSteamWorkshop(mod.fileId).catch((e) => setLastMessage(String(e)))}
             onViewDetail={() => onSelectMod(contextMenu.key)}
+            onEditCategories={() => setModPopup({ modKey: contextMenu.key, kind: "category" })}
+            onEditNote={() => setModPopup({ modKey: contextMenu.key, kind: "note" })}
           />
         );
       })()}
@@ -1019,6 +1051,25 @@ export default function ModList({ saving, onSelectMod }: Props) {
           onOrderDown={handleBatchOrderDown}
           groups={groups}
         />
+        );
+      })()}
+
+      {/* ★ v2: mod-level category/note popups opened from context menu */}
+      {modPopup && (() => {
+        const target = mods.find((m) => `${m.source}_${m.fileId}` === modPopup.modKey);
+        if (!target) return null;
+        return modPopup.kind === "category" ? (
+          <CategoryPicker
+            modKey={modPopup.modKey}
+            title={target.title}
+            onClose={() => setModPopup(null)}
+          />
+        ) : (
+          <NoteEditor
+            modKey={modPopup.modKey}
+            title={target.title}
+            onClose={() => setModPopup(null)}
+          />
         );
       })()}
     </div>

@@ -4,6 +4,10 @@ import { renderColoredText } from "../../utils/renderColoredText";
 import { openInExplorer, openSteamWorkshop, openWorkshopUrl } from "../../lib/tauriApi";
 import { message } from "@tauri-apps/plugin-dialog";
 import { createLogger } from "../../lib/logger";
+import { useCategoryStore } from "../../store/useCategoryStore";
+import { useNoteStore } from "../../store/useNoteStore";
+import CategoryPicker from "../common/CategoryPicker";
+import NoteEditor from "../common/NoteEditor";
 
 interface Props {
   mod: ModInfo;
@@ -44,6 +48,13 @@ export default function ModCard({
   viewMode = "detailed",
 }: Props) {
   const [localOrder, setLocalOrder] = useState(mod.order);
+  // ★ v2: category/note popups + store reads
+  const [catPickerOpen, setCatPickerOpen] = useState(false);
+  const [noteEditorOpen, setNoteEditorOpen] = useState(false);
+  const modKey = `${mod.source}_${mod.fileId}`;
+  const catDefs = useCategoryStore((s) => s.categories);
+  const catIds = useCategoryStore((s) => s.modCats[modKey] ?? []);
+  const noteText = useNoteStore((s) => s.notes[modKey]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop change to local state
@@ -335,6 +346,77 @@ export default function ModCard({
             ))}
           </div>
         )}
+
+        {/* ★ v2: user categories — colored badges, click to edit */}
+        <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+          {catIds.length > 0 ? (
+            catIds.map((cid) => {
+              const def = catDefs.find((c) => c.id === cid);
+              if (!def) return null;
+              return (
+                <button
+                  key={cid}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCatPickerOpen(true);
+                  }}
+                  className="text-[10px] px-1.5 py-0.5 rounded border inline-flex items-center gap-1
+                             hover:brightness-125 cursor-pointer transition-all"
+                  style={{
+                    color: def.color ?? "#3b82f6",
+                    borderColor: (def.color ?? "#3b82f6") + "66",
+                    background: (def.color ?? "#3b82f6") + "1a",
+                  }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: def.color ?? "#3b82f6" }} />
+                  {def.name}
+                </button>
+              );
+            })
+          ) : (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setCatPickerOpen(true);
+              }}
+              className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-slate-600
+                         text-slate-500 hover:text-slate-300 hover:border-slate-400 cursor-pointer"
+            >
+              + 分类
+            </button>
+          )}
+        </div>
+
+        {/* ★ v2: user note — 📝 block with add/edit entry */}
+        {viewMode === "detailed" && (
+          <div className="mt-1.5">
+            {noteText ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setNoteEditorOpen(true);
+                }}
+                className="w-full text-left text-[10px] px-2 py-1 rounded bg-amber-950/30
+                           border border-amber-800/40 text-amber-200/80 hover:bg-amber-950/50
+                           cursor-pointer transition-colors line-clamp-2"
+                title={noteText}
+              >
+                📝 {noteText}
+              </button>
+            ) : (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setNoteEditorOpen(true);
+                }}
+                className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-slate-600
+                           text-slate-500 hover:text-slate-300 hover:border-slate-400 cursor-pointer"
+              >
+                + 添加备注
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Right sidebar: toggle / order / actions */}
@@ -464,6 +546,22 @@ export default function ModCard({
           </button>
         </div>
       </div>
+
+      {/* ★ v2: category/note popups */}
+      {catPickerOpen && (
+        <CategoryPicker
+          modKey={modKey}
+          title={mod.title}
+          onClose={() => setCatPickerOpen(false)}
+        />
+      )}
+      {noteEditorOpen && (
+        <NoteEditor
+          modKey={modKey}
+          title={mod.title}
+          onClose={() => setNoteEditorOpen(false)}
+        />
+      )}
     </div>
   );
 }

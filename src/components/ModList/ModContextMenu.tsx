@@ -18,6 +18,10 @@ interface Props {
   onOpenInExplorer: () => void;
   onOpenWorkshop: () => void;
   onViewDetail: () => void;
+  /** ★ v2: open category picker for this mod */
+  onEditCategories: () => void;
+  /** ★ v2: open note editor for this mod */
+  onEditNote: () => void;
 }
 
 function MenuItem({
@@ -64,6 +68,8 @@ export default function ModContextMenu({
   onOpenInExplorer,
   onOpenWorkshop,
   onViewDetail,
+  onEditCategories,
+  onEditNote,
 }: Props) {
   const [sendToOpen, setSendToOpen] = useState(false);
   const sendToRef = useRef<HTMLDivElement>(null);
@@ -185,6 +191,16 @@ export default function ModContextMenu({
           Steam Workshop 页面
         </MenuItem>
       )}
+
+      <MenuSeparator />
+
+      {/* ★ v2: organize — categories / notes */}
+      <MenuItem onClick={() => handleAction(onEditCategories)}>
+        设置分类…
+      </MenuItem>
+      <MenuItem onClick={() => handleAction(onEditNote)}>
+        编辑备注…
+      </MenuItem>
 
       <MenuSeparator />
 

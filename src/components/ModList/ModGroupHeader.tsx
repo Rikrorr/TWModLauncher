@@ -30,6 +30,8 @@ export default function ModGroupHeader({
   onStopEdit,
 }: Props) {
   const isDragTarget = dragOverGroupId === group.id;
+  // ★ v2: empty group = separator (folder model) — hide collapse arrow & count
+  const isEmpty = group.modKeys.length === 0;
 
   return (
     <div
@@ -49,16 +51,20 @@ export default function ModGroupHeader({
       className={`flex items-center gap-2 px-3 py-2 rounded-lg border select-none ${
         isDragTarget
           ? "border-green-500 bg-green-950/40"
-          : "border-blue-700/50 bg-blue-950/20"
+          : isEmpty
+            ? "border-slate-700/40 bg-slate-800/30"
+            : "border-blue-700/50 bg-blue-950/20"
       } ${isDragging ? "opacity-30" : ""}`}
     >
-      {/* Collapse toggle */}
-      <span
-        className="text-xs text-blue-300 cursor-pointer"
-        onClick={() => onToggle(group.id)}
-      >
-        {group.collapsed ? "\u25B6" : "\u25BC"}
-      </span>
+      {/* Collapse toggle — hidden for empty groups (nothing to collapse) */}
+      {!isEmpty && (
+        <span
+          className="text-xs text-blue-300 cursor-pointer"
+          onClick={() => onToggle(group.id)}
+        >
+          {group.collapsed ? "\u25B6" : "\u25BC"}
+        </span>
+      )}
 
       {/* Name */}
       {isEditing ? (
@@ -94,8 +100,8 @@ export default function ModGroupHeader({
         </span>
       )}
 
-      {/* Mod count */}
-      <span className="text-xs text-slate-500">({modCount})</span>
+      {/* Mod count — hidden for empty groups */}
+      {!isEmpty && <span className="text-xs text-slate-500">({modCount})</span>}
 
       {/* Delete */}
       <button

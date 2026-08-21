@@ -120,6 +120,11 @@ export function useModListState(mods: ModInfo[]) {
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
 
+  // ★ v2: user-category multi-select (in-memory only)
+  const [activeCatIds, setActiveCatIds] = useState<Set<string>>(new Set());
+  const [catFilterDropdownOpen, setCatFilterDropdownOpen] = useState(false);
+  const catFilterDropdownRef = useRef<HTMLDivElement>(null);
+
   // View mode
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const cached = loadPrefs();
@@ -213,6 +218,12 @@ export function useModListState(mods: ModInfo[]) {
     setTagDropdownOpen,
     tagDropdownRef,
     allTags,
+    // ★ v2: user-category filter
+    activeCatIds,
+    setActiveCatIds,
+    catFilterDropdownOpen,
+    setCatFilterDropdownOpen,
+    catFilterDropdownRef,
     // View
     viewMode,
     setViewMode,
