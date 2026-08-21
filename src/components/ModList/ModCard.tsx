@@ -8,6 +8,8 @@ import { useCategoryStore } from "../../store/useCategoryStore";
 import { useNoteStore } from "../../store/useNoteStore";
 import CategoryPicker from "../common/CategoryPicker";
 import NoteEditor from "../common/NoteEditor";
+import ConflictDialog from "../common/ConflictDialog";
+import type { ConflictGroup } from "../../hooks/useConflictDetection";
 
 interface Props {
   mod: ModInfo;
@@ -25,6 +27,10 @@ interface Props {
   isDragOver?: boolean;
   isSelected?: boolean;
   viewMode?: "detailed" | "compact";
+  /** ★ v2: conflict groups involving this mod */
+  conflicts?: ConflictGroup[];
+  /** ★ v2: modKey → title map for conflict dialog (optional, falls back to keys) */
+  modTitles?: Record<string, string>;
 }
 
 const INTERACTIVE_SELECTOR = "button, input, label, select, [data-no-drag]";
@@ -46,11 +52,14 @@ export default function ModCard({
   isDragOver,
   isSelected,
   viewMode = "detailed",
+  conflicts,
+  modTitles,
 }: Props) {
   const [localOrder, setLocalOrder] = useState(mod.order);
   // ★ v2: category/note popups + store reads
   const [catPickerOpen, setCatPickerOpen] = useState(false);
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
+  const [conflictOpen, setConflictOpen] = useState(false);
   const modKey = `${mod.source}_${mod.fileId}`;
   const catDefs = useCategoryStore((s) => s.categories);
   const catIds = useCategoryStore((s) => s.modCats[modKey] ?? []);
@@ -307,6 +316,23 @@ export default function ModCard({
           <span className={`text-[10px] px-1.5 py-0.5 rounded border ${sourceColor}`}>
             {sourceLabel}
           </span>
+          {/* ★ v2: conflict badge */}
+          {conflicts && conflicts.length > 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setConflictOpen(true);
+              }}
+              title={conflicts.some((c) => c.severity === "high") ? "检测到 DLL 冲突" : "检测到疑似设置项重复"}
+              className={`text-[10px] px-1.5 py-0.5 rounded border cursor-pointer shrink-0 transition-colors ${
+                conflicts.some((c) => c.severity === "high")
+                  ? "bg-red-900/60 text-red-300 border-red-700 hover:bg-red-800/60"
+                  : "bg-amber-900/60 text-amber-300 border-amber-700 hover:bg-amber-800/60"
+              }`}
+            >
+              {conflicts.some((c) => c.severity === "high") ? "🔴 冲突" : "🟡 疑似"}
+            </button>
+          )}
           {mod.parseError && (
             <span className="text-[10px] px-1.5 py-0.5 rounded border bg-red-900/60 text-red-300 border-red-700">
               解析失败
@@ -560,6 +586,15 @@ export default function ModCard({
           modKey={modKey}
           title={mod.title}
           onClose={() => setNoteEditorOpen(false)}
+        />
+      )}
+      {conflictOpen && conflicts && conflicts.length > 0 && (
+        <ConflictDialog
+          modKey={modKey}
+          modTitle={mod.title}
+          conflicts={conflicts}
+          modTitles={modTitles ?? {}}
+          onClose={() => setConflictOpen(false)}
         />
       )}
     </div>

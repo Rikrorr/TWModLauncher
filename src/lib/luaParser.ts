@@ -162,6 +162,8 @@ export interface ParsedConfig {
   tags: string[];
   needRestart: boolean;
   defaultSettings: ModSettingDef[];
+  /** ★ v2: DLL file names listed in BackendPlugins (for conflict detection) */
+  backendPlugins: string[];
   parseError: boolean;
 }
 
@@ -198,6 +200,7 @@ export function parseConfigLua(raw: string): ParsedConfig {
     tags: [],
     needRestart: false,
     defaultSettings: [],
+    backendPlugins: [],
     parseError: false,
   };
 
@@ -227,8 +230,20 @@ export function parseConfigLua(raw: string): ParsedConfig {
     defaultSettings: parseDefaultSettings(
       table.DefaultSettings ?? table.defaultSettings,
     ),
+    backendPlugins: parseStringArray(
+      table.BackendPlugins ?? table.backendPlugins,
+    ),
     parseError: false,
   };
+}
+
+/** Parse a Lua string array (numeric-keyed table) into a string[]. */
+function parseStringArray(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
+  if (typeof raw === "object" && raw !== null) {
+    return Object.values(raw).map(String).filter(Boolean);
+  }
+  return [];
 }
 
 /** Parse Settings.Lua raw text → key-value map. */

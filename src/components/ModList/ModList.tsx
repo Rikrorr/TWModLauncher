@@ -3,6 +3,7 @@ import Fuse from "fuse.js";
 import { useModStore } from "../../store/useModStore";
 import { useAppStore } from "../../store/useAppStore";
 import { useCategoryStore } from "../../store/useCategoryStore";
+import { useConflictDetection } from "../../hooks/useConflictDetection";
 import type { ModInfo, ModGroup } from "../../lib/types";
 import ModCard from "./ModCard";
 import ModFilterBar from "./ModFilterBar";
@@ -52,6 +53,13 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
   const setActiveSchemeModKeys = useAppStore((s) => s.setActiveSchemeModKeys);
   // ★ v2: user categories for the filter dropdown
   const userCategories = useCategoryStore((s) => s.categories);
+  // ★ v2: conflict detection (DLL duplicate + setting key repeat)
+  const { conflictMap } = useConflictDetection(mods);
+  const modTitles = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const m of mods) map[`${m.source}_${m.fileId}`] = m.title;
+    return map;
+  }, [mods]);
 
   // ── Multi-select ──────────────────────────────────────────────────────────
   const selectedModKeys = useModStore((s) => s.selectedModKeys);
@@ -903,6 +911,8 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
                       isDragOver={false}
                       isSelected={selectedModKeys.includes(item.key)}
                       viewMode={filter.viewMode}
+                      conflicts={conflictMap.get(item.key)}
+                      modTitles={modTitles}
                     />
                   </div>
                 </div>

@@ -54,6 +54,8 @@ export interface ModInfo {
   tagList: string[];
   needRestart: boolean;
   parseError: boolean;
+  /** ★ v2: DLL names from Config.lua BackendPlugins (for conflict detection) */
+  backendPlugins: string[];
   /** True if Config.lua is missing or empty (residual workshop folder / empty local mod) */
   isResidual: boolean;
   /** Last modification timestamp, formatted for display */
