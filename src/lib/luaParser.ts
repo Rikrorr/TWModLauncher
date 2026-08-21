@@ -36,12 +36,33 @@ function keyToString(node: LuaNode | null | undefined): string {
   }
 }
 
+/** Decode common Lua string escape sequences in raw source text. */
+function decodeLuaEscapes(s: string): string {
+  return s.replace(/\\([\\"nrt])/g, (_m, c: string) => {
+    switch (c) {
+      case "\\":
+        return "\\";
+      case '"':
+        return '"';
+      case "n":
+        return "\n";
+      case "r":
+        return "\r";
+      case "t":
+        return "\t";
+      default:
+        return _m;
+    }
+  });
+}
+
 /** Extract the decoded string from a luaparse StringLiteral node. */
 function extractString(node: LuaNode): string {
   const sl = node as { value: string | null; raw: string };
   if (typeof sl.value === "string") return sl.value;
-  // Fallback: strip surrounding quotes from raw
-  return sl.raw.replace(/^["']|["']$/g, "");
+  // luaparse's default encodingMode ("none") discards decoded values,
+  // so fall back to stripping the surrounding quotes and decoding escapes.
+  return decodeLuaEscapes(sl.raw.replace(/^["']|["']$/g, ""));
 }
 
 function extractValue(node: LuaNode): unknown {
@@ -145,7 +166,7 @@ export interface ParsedConfig {
 }
 
 export interface ModSettingDef {
-  settingType: "Toggle" | "Slider" | "Dropdown";
+  settingType: "Toggle" | "Slider" | "Dropdown" | "InputField";
   key: string;
   displayName: string;
   description: string;
@@ -335,7 +356,7 @@ function parseOneSetting(raw: unknown): ModSettingDef | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
   const settingType = String(r.SettingType ?? r.settingType ?? "");
-  if (!["Toggle", "Slider", "Dropdown"].includes(settingType)) {
+  if (!["Toggle", "Slider", "Dropdown", "InputField"].includes(settingType)) {
     return null;
   }
   return {

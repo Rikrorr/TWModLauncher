@@ -231,10 +231,20 @@ export function generateModSettingsLua(data: ModSettingsData): string {
 
 // ── Per-mod Settings.Lua generation ──
 
+/** Escape a string for inclusion in a double-quoted Lua string literal. */
+function escapeLuaString(s: string): string {
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
+}
+
 function luaValue(v: unknown): string {
   if (typeof v === "boolean") return v ? "true" : "false";
   if (typeof v === "number") return String(v);
-  if (typeof v === "string") return `"${v}"`;
+  if (typeof v === "string") return `"${escapeLuaString(v)}"`;
   return "nil";
 }
 

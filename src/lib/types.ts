@@ -62,7 +62,7 @@ export interface ModInfo {
 
 /** A single setting definition from Config.lua DefaultSettings */
 export interface ModSettingDef {
-  settingType: "Toggle" | "Slider" | "Dropdown";
+  settingType: "Toggle" | "Slider" | "Dropdown" | "InputField";
   key: string;
   displayName: string;
   description: string;
