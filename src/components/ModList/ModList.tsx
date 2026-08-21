@@ -31,9 +31,11 @@ import {
 interface Props {
   saving: boolean;
   onSelectMod: (key: string) => void;
+  /** ★ v2: save current multi-selection as an offline collection */
+  onSaveSelectionAsCollection?: () => void;
 }
 
-export default function ModList({ saving, onSelectMod }: Props) {
+export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollection }: Props) {
   // ── Store ────────────────────────────────────────────────────────────────
   const mods = useModStore((s) => s.mods);
   const scanning = useModStore((s) => s.scanning);
@@ -1050,6 +1052,7 @@ export default function ModList({ saving, onSelectMod }: Props) {
           onOrderUp={handleBatchOrderUp}
           onOrderDown={handleBatchOrderDown}
           groups={groups}
+          onSaveAsCollection={() => onSaveSelectionAsCollection?.()}
         />
         );
       })()}

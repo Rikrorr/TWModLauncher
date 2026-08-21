@@ -20,10 +20,12 @@ import { useModStore } from "./store/useModStore";
 import { useCategoryStore } from "./store/useCategoryStore";
 import { useNoteStore } from "./store/useNoteStore";
 import { useModScanner } from "./hooks/useModScanner";
+import { useCollectionStore } from "./store/useCollectionStore";
 import type { ProfileData } from "./lib/types";
 import ModList from "./components/ModList/ModList";
 import SettingsEditor from "./components/SettingsEditor/SettingsEditor";
 import ProfileManager from "./components/ProfileManager/ProfileManager";
+import CollectionPanel from "./components/Collection/CollectionPanel";
 
 function App() {
   const gamePath = useAppStore((s) => s.gamePath);
@@ -60,6 +62,8 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [collectionOpen, setCollectionOpen] = useState(false);
+  const [collectionCreateSeed, setCollectionCreateSeed] = useState<{ modKeys: string[]; modMeta: Record<string, import("./lib/types").ModMeta> } | null>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-load cached game path on startup
@@ -455,6 +459,84 @@ function App() {
     selectMod(key);
   }, [handleSaveAll, selectMod]);
 
+  // ★ v2: save the current multi-selection as an offline collection
+  const handleSaveSelectionAsCollection = useCallback(() => {
+    const selected = useModStore.getState().selectedModKeys;
+    const currentMods = useModStore.getState().mods;
+    const selectedMods = currentMods.filter((m) => selected.includes(`${m.source}_${m.fileId}`));
+    const modMeta: Record<string, import("./lib/types").ModMeta> = {};
+    for (const m of selectedMods) {
+      const key = `${m.source}_${m.fileId}`;
+      const meta: import("./lib/types").ModMeta = {
+        title: m.title,
+        author: m.author,
+        source: m.source,
+        fileId: m.fileId,
+      };
+      if (m.version) meta.version = m.version;
+      modMeta[key] = meta;
+    }
+    setCollectionCreateSeed({
+      modKeys: selectedMods.map((m) => `${m.source}_${m.fileId}`),
+      modMeta,
+    });
+    setCollectionOpen(true);
+  }, []);
+
+  // ★ v2: build a new scheme (profile) from a collection
+  const handleCreateSchemeFromCollection = useCallback(
+    (collectionId: string) => {
+      const col = useCollectionStore.getState().collections.find((c) => c.id === collectionId);
+      if (!col) return;
+      const now = new Date().toISOString();
+      const groupEntries = (col.groups ?? []).map((g, i) => ({
+        id: `col-group-${collectionId.slice(0, 8)}-${i}`,
+        name: g.name,
+        collapsed: false,
+        modKeys: g.modKeys,
+      }));
+      const data: ProfileData = {
+        version: 2,
+        name: col.name,
+        createdAt: now,
+        gamePath: useAppStore.getState().gamePath ?? "",
+        modKeys: col.modKeys,
+        enabledMods: col.enabledMods ?? [...col.modKeys],
+        modOrder: {},
+        modSettings: {},
+        groups: groupEntries,
+        displayOrder: [
+          ...groupEntries.map((g) => g.id),
+          ...col.modKeys.filter((k) => !groupEntries.some((g) => g.modKeys.includes(k))),
+        ],
+        modMeta: col.modMeta,
+      };
+      setCollectionOpen(false);
+      handleProfileLoad(data);
+      setLastMessage(`已从集合 "${col.name}" 创建方案，请确认后保存`);
+      // Auto-save the new scheme
+      const catStore = useCategoryStore.getState();
+      const noteStore = useNoteStore.getState();
+      const saveData: ProfileData = {
+        ...data,
+        modCategories: Object.fromEntries(
+          Object.keys(data.modMeta)
+            .filter((k) => (catStore.modCats[k] ?? []).length > 0)
+            .map((k) => [k, catStore.modCats[k]]),
+        ),
+        modNotes: Object.fromEntries(
+          Object.keys(data.modMeta)
+            .filter((k) => noteStore.notes[k]?.trim())
+            .map((k) => [k, noteStore.notes[k].trim()]),
+        ),
+      };
+      import("./lib/tauriApi").then((api) =>
+        api.saveProfile(data.name, JSON.stringify(saveData, null, 2)).catch(() => {}),
+      );
+    },
+    [handleProfileLoad, setLastMessage],
+  );
+
   const selectedMod = selectedModKey
     ? mods.find(
         (m) => `${m.source}_${m.fileId}` === selectedModKey
@@ -492,6 +574,14 @@ function App() {
                          disabled:opacity-50"
             >
               {refreshing ? "刷新中..." : "刷新"}
+            </button>
+            <button
+              onClick={() => setCollectionOpen(true)}
+              title="管理离线 Mod 集合"
+              className="text-xs px-2.5 py-1 border border-slate-600 hover:border-slate-400
+                         text-slate-400 rounded transition-colors cursor-pointer shrink-0"
+            >
+              集合
             </button>
             <ProfileManager
               gamePath={gamePath}
@@ -636,8 +726,22 @@ function App() {
               <ModList
                 saving={saving}
                 onSelectMod={handleSelectMod}
+                onSaveSelectionAsCollection={handleSaveSelectionAsCollection}
               />
             </div>
+
+            {/* ★ v2: collection panel — full-screen overlay (sub-page mode) */}
+            {collectionOpen && (
+              <CollectionPanel
+                mods={mods}
+                onClose={() => {
+                  setCollectionOpen(false);
+                  setCollectionCreateSeed(null);
+                }}
+                onCreateSchemeFromCollection={handleCreateSchemeFromCollection}
+                seed={collectionCreateSeed}
+              />
+            )}
 
             {/* Settings editor — overlaid when a mod is selected */}
             {selectedMod && (

@@ -13,6 +13,8 @@ interface Props {
   onOrderUp: () => void;
   onOrderDown: () => void;
   groups: ModGroup[];
+  /** ★ v2: save the selection as an offline collection */
+  onSaveAsCollection: () => void;
 }
 
 function MenuItem({
@@ -54,6 +56,7 @@ export default function MultiContextMenu({
   onOrderUp,
   onOrderDown,
   groups,
+  onSaveAsCollection,
 }: Props) {
   const [sendToOpen, setSendToOpen] = useState(false);
   const sendToRef = useRef<HTMLDivElement>(null);
@@ -148,6 +151,13 @@ export default function MultiContextMenu({
       </MenuItem>
       <MenuItem onClick={() => handleAction(onOrderDown)}>
         下移
+      </MenuItem>
+
+      <MenuSeparator />
+
+      {/* ★ v2: save selection as collection */}
+      <MenuItem onClick={() => handleAction(onSaveAsCollection)}>
+        保存为集合…
       </MenuItem>
     </ContextMenu>
   );
