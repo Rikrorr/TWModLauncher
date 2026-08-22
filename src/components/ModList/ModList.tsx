@@ -959,6 +959,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
                   ) : (
                     poolFiltered.map((m) => {
                       const key = `${m.source}_${m.fileId}`;
+                      const residual = m.isResidual;
                       return (
                         <div
                           key={key}
@@ -971,18 +972,27 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
                           <span className="text-[10px] text-slate-500 shrink-0">
                             {m.source === 1 ? "工坊" : "本地"}
                           </span>
-                          <button
-                            onClick={() => {
-                              // Add to scheme: enable mod + join member set
-                              toggleMod(m.fileId, true);
-                              setDirty(true);
-                              setActiveSchemeModKeys([...(activeSchemeModKeys ?? []), key]);
-                            }}
-                            className="text-[10px] px-2 py-0.5 bg-blue-600 hover:bg-blue-500
-                                       text-white rounded cursor-pointer shrink-0"
-                          >
-                            加入方案
-                          </button>
+                          {residual ? (
+                            <span
+                              className="text-[10px] text-slate-600 shrink-0"
+                              title="残留 Mod（Config.lua 缺失或损坏），不可加入方案"
+                            >
+                              残留
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                // Add to scheme: enable mod + join member set
+                                toggleMod(m.fileId, true);
+                                setDirty(true);
+                                setActiveSchemeModKeys([...(activeSchemeModKeys ?? []), key]);
+                              }}
+                              className="text-[10px] px-2 py-0.5 bg-blue-600 hover:bg-blue-500
+                                         text-white rounded cursor-pointer shrink-0"
+                            >
+                              加入方案
+                            </button>
+                          )}
                         </div>
                       );
                     })
