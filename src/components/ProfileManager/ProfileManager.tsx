@@ -162,8 +162,14 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
         return;
       }
 
-      // Migrate v1 → v2 on load (in-memory only; saved back on next save)
-      const data: ProfileData = isProfileV2(parsed) ? parsed : migrateProfileV1(parsed);
+      // Migrate v1 → v2 on load (in-memory only; saved back on next save).
+      // Back up the original v1 file first (migration is irreversible).
+      const data: ProfileData = isProfileV2(parsed)
+        ? (parsed as ProfileData)
+        : (() => {
+            saveProfile(`${name}.bak-v1`, raw).catch(() => {});
+            return migrateProfileV1(parsed as ProfileDataV1);
+          })();
 
       const missing = detectMissingMods(data, mods);
       if (missing.size > 0) {

@@ -51,10 +51,11 @@ function App() {
   const updateModSettings = useModStore((s) => s.updateModSettings);
   const { scan, rescan } = useModScanner();
 
-  // ★ v2: hydrate global category/note stores on startup
+  // ★ v2: hydrate global category/note/collection stores on startup
   useEffect(() => {
     useCategoryStore.getState().hydrate();
     useNoteStore.getState().hydrate();
+    useCollectionStore.getState().hydrate();
   }, []);
 
   const [gameRunning, setGameRunning] = useState(false);

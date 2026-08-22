@@ -103,9 +103,8 @@ export default function CollectionPanel({ mods, onClose, onCreateSchemeFromColle
       flash(result.error ?? "导入失败", "error");
       return;
     }
-    // Detect missing mods from the newly imported collection
-    const store = useCollectionStore.getState();
-    const imported = store.collections.find((c) => c.name === nameOfImported(raw));
+    // Detect missing mods from the newly imported collection (use returned object)
+    const imported = result.collection;
     if (imported) {
       const missing = detectMissingMods(
         { enabledMods: [], modKeys: imported.modKeys, groups: imported.groups, modMeta: imported.modMeta },
@@ -270,13 +269,4 @@ export default function CollectionPanel({ mods, onClose, onCreateSchemeFromColle
       )}
     </div>
   );
-}
-
-/** Best-effort: read the "name" field from a raw imported JSON for lookup. */
-function nameOfImported(raw: string): string {
-  try {
-    return JSON.parse(raw).name ?? "";
-  } catch {
-    return "";
-  }
 }

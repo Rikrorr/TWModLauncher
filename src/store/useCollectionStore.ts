@@ -15,7 +15,9 @@ interface CollectionState {
   }) => ModCollection;
   remove: (id: string) => void;
   /** Import a collection JSON string. Returns { ok } or { ok:false, error }. */
-  importJson: (raw: string) => { ok: boolean; error?: string };
+  importJson: (
+    raw: string,
+  ) => { ok: boolean; error?: string; collection?: ModCollection };
   /** Export a collection to JSON string. Returns null if id unknown. */
   exportJson: (id: string) => string | null;
   hydrate: () => void;
@@ -104,7 +106,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     };
     set((s) => ({ collections: [normalized, ...s.collections] }));
     persist(get());
-    return { ok: true };
+    return { ok: true, collection: normalized };
   },
 
   exportJson: (id) => {
