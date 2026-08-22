@@ -20,13 +20,24 @@ interface Props {
   gamePath: string;
   mods: ModInfo[];
   onLoad: (data: ProfileData) => void;
+  /** ★ v2: controlled open state (SchemeSelector "方案管理…" opens this panel) */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** ★ v2: non-null signals "create new scheme" mode (from SchemeSelector "+ 新建方案") */
+  createSignal?: { name: string } | null;
 }
 
 const log = createLogger("ProfileManager");
 
-export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
+export default function ProfileManager({ gamePath, mods, onLoad, open: openProp, onOpenChange, createSignal }: Props) {
   const [profiles, setProfiles] = useState<ProfileMeta[]>([]);
-  const [open, setOpen] = useState(false);
+  // Internal fallback when uncontrolled; controlled when openProp provided
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = openProp ?? internalOpen;
+  const setOpen = (v: boolean) => {
+    setInternalOpen(v);
+    onOpenChange?.(v);
+  };
   const [saveName, setSaveName] = useState("");
   const [showSave, setShowSave] = useState(false);
   const [confirmOverwriteName, setConfirmOverwriteName] = useState<string | null>(null);
@@ -47,6 +58,18 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
   useEffect(() => {
     refresh();
   }, []);
+
+  // ★ v2: createSignal from SchemeSelector → open panel in create-new mode
+  useEffect(() => {
+    if (createSignal) {
+      const t = setTimeout(() => {
+        setSaveName(createSignal.name ?? "");
+        setShowSave(true);
+        setConfirmOverwriteName(null);
+      }, 0);
+      return () => clearTimeout(t);
+    }
+  }, [createSignal]);
 
   const flash = (msg: string, ms = 3000) => {
     setMessage({ text: msg, type: "info" });
@@ -147,44 +170,6 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
       refresh();
     } catch (e) {
       flash(`保存失败: ${String(e)}`);
-    }
-  };
-
-  const handleLoad = async (name: string) => {
-    try {
-      const raw = await loadProfile(name);
-
-      let parsed: ProfileData | ProfileDataV1;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        flash("方案文件已损坏，无法加载");
-        return;
-      }
-
-      // Migrate v1 → v2 on load (in-memory only; saved back on next save).
-      // Back up the original v1 file first (migration is irreversible).
-      const data: ProfileData = isProfileV2(parsed)
-        ? (parsed as ProfileData)
-        : (() => {
-            saveProfile(`${name}.bak-v1`, raw).catch(() => {});
-            return migrateProfileV1(parsed as ProfileDataV1);
-          })();
-
-      const missing = detectMissingMods(data, mods);
-      if (missing.size > 0) {
-        setOpen(false);
-        setPendingLoad(data);
-        setMissingMods(missing);
-        return;
-      }
-
-      onLoad(data);
-      useAppStore.getState().setActiveSchemeName(data.name);
-      flash(`方案 "${name}" 已加载`);
-      setOpen(false);
-    } catch (e) {
-      flash(`加载失败: ${String(e)}`);
     }
   };
 
@@ -438,13 +423,6 @@ export default function ProfileManager({ gamePath, mods, onLoad }: Props) {
                     {p.modCount} Mod
                   </span>
                   <div className="flex gap-1">
-                    <button
-                      onClick={() => handleLoad(p.name)}
-                      className="text-xs px-1.5 py-0.5 bg-blue-600 hover:bg-blue-500
-                                 text-white rounded cursor-pointer"
-                    >
-                      加载
-                    </button>
                     <button
                       onClick={() => handleExport(p.name)}
                       title="导出为 JSON 文件"

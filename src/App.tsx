@@ -26,6 +26,7 @@ import type { ProfileData } from "./lib/types";
 import ModList from "./components/ModList/ModList";
 import SettingsEditor from "./components/SettingsEditor/SettingsEditor";
 import ProfileManager from "./components/ProfileManager/ProfileManager";
+import SchemeSelector from "./components/ProfileManager/SchemeSelector";
 import CollectionPanel from "./components/Collection/CollectionPanel";
 
 function App() {
@@ -66,6 +67,10 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [collectionOpen, setCollectionOpen] = useState(false);
   const [collectionCreateSeed, setCollectionCreateSeed] = useState<{ modKeys: string[]; modMeta: Record<string, import("./lib/types").ModMeta> } | null>(null);
+  // ★ v2: scheme manager panel controlled open state (SchemeSelector opens it)
+  const [managerOpen, setManagerOpen] = useState(false);
+  // ★ v2: pending new-scheme name passed to manager (SchemeSelector "+ 新建方案")
+  const [pendingNewScheme, setPendingNewScheme] = useState<{ name: string } | null>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-load cached game path on startup
@@ -467,6 +472,12 @@ function App() {
     selectMod(key);
   }, [handleSaveAll, selectMod]);
 
+  // ★ v2: SchemeSelector "+ 新建方案" — open manager in create mode
+  const handleOpenManagerCreate = useCallback(() => {
+    setPendingNewScheme({ name: "" });
+    setManagerOpen(true);
+  }, []);
+
   // ★ v2: save the current multi-selection as an offline collection
   const handleSaveSelectionAsCollection = useCallback(() => {
     const selected = useModStore.getState().selectedModKeys;
@@ -590,10 +601,23 @@ function App() {
             >
               集合
             </button>
+            {/* ★ v2: scheme switcher — high-frequency activate/switch, separate from editing */}
+            <SchemeSelector
+              mods={mods}
+              onActivate={handleProfileLoad}
+              onOpenManager={() => {
+                setPendingNewScheme(null);
+                setManagerOpen(true);
+              }}
+              onCreateScheme={handleOpenManagerCreate}
+            />
             <ProfileManager
               gamePath={gamePath}
               mods={mods}
               onLoad={handleProfileLoad}
+              open={managerOpen}
+              onOpenChange={setManagerOpen}
+              createSignal={pendingNewScheme}
             />
             <button
               onClick={() => openLogDir().catch(() => {})}
