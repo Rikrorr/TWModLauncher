@@ -62,7 +62,11 @@ export default function ModCard({
   const [conflictOpen, setConflictOpen] = useState(false);
   const modKey = `${mod.source}_${mod.fileId}`;
   const catDefs = useCategoryStore((s) => s.categories);
-  const catIds = useCategoryStore((s) => s.modCats[modKey] ?? []);
+  // ★ zustand v5: selector must return a cached/stable reference — reading the
+  // raw value (undefined when absent) and falling back here avoids allocating
+  // a new array every render, which would cause an infinite update loop.
+  const catIdsRaw = useCategoryStore((s) => s.modCats[modKey]);
+  const catIds = catIdsRaw ?? [];
   const noteText = useNoteStore((s) => s.notes[modKey]);
 
   useEffect(() => {
