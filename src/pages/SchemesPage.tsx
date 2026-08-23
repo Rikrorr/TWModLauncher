@@ -1,14 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { listProfiles, deleteProfile } from "../lib/tauriApi";
+import { listProfiles, deleteProfile, saveProfile } from "../lib/tauriApi";
 import { useAppStore } from "../store/useAppStore";
 import { useCollectionStore } from "../store/useCollectionStore";
 import { useConflictDetection } from "../hooks/useConflictDetection";
-import { loadScheme, saveScheme, addModsToScheme, removeModsFromScheme, buildModMeta } from "../utils/schemeMembers";
+import {
+  loadScheme,
+  saveScheme,
+  addModsToScheme,
+  removeModsFromScheme,
+  buildModMeta,
+  analyzeCollectionMerge,
+  mergeCollectionIntoScheme,
+  type CollectionMergeConflict,
+} from "../utils/schemeMembers";
 import { detectMissingMods } from "../utils/migrateProfile";
-import type { ModInfo, ModMeta, ProfileData, ProfileMeta } from "../lib/types";
+import type { ModInfo, ModMeta, ModCollection, ProfileData, ProfileMeta } from "../lib/types";
 import ModActionMenu from "../components/common/ModActionMenu";
 import AddModPanel from "../components/common/AddModPanel";
 import ContainerSelect from "../components/common/ContainerSelect";
+import CreateDialog from "../components/common/CreateDialog";
 import MemberModList from "../components/ModList/MemberModList";
 import MissingModsDialog from "../components/ProfileManager/MissingModsDialog";
 import { createLogger } from "../lib/logger";
@@ -199,6 +209,74 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     [mods, setLastMessage],
   );
 
+  // ★ v3: create a new (empty) scheme via modal dialog
+  const [createSchemeOpen, setCreateSchemeOpen] = useState(false);
+  const handleCreateScheme = useCallback(
+    async (name: string) => {
+      const now = new Date().toISOString();
+      const data: ProfileData = {
+        version: 2,
+        name,
+        createdAt: now,
+        gamePath: useAppStore.getState().gamePath ?? "",
+        modKeys: [],
+        enabledMods: [],
+        modOrder: {},
+        modSettings: {},
+        groups: [],
+        displayOrder: [],
+        modMeta: {},
+      };
+      try {
+        await saveProfile(name, JSON.stringify(data, null, 2));
+        setSelectedName(name);
+        setDirty(false);
+        setLastMessage(`方案 "${name}" 已创建`);
+        void refresh();
+      } catch (e) {
+        setLastMessage(`创建失败: ${String(e)}`);
+      }
+    },
+    [refresh, setLastMessage, setSelectedName],
+  );
+
+  // ★ v3: "＋ 添加" menu — add mods or merge a whole collection
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [addCollectionOpen, setAddCollectionOpen] = useState(false);
+  const [mergeConflict, setMergeConflict] = useState<{
+    collection: ModCollection;
+    conflict: CollectionMergeConflict;
+  } | null>(null);
+
+  const applyCollectionMerge = useCallback(
+    (col: ModCollection, conflict: CollectionMergeConflict, mode: "all" | "partial") => {
+      setScheme((prev) => {
+        if (!prev) return prev;
+        setDirty(true);
+        return mergeCollectionIntoScheme(prev, col, conflict, mode);
+      });
+      setMergeConflict(null);
+      setAddCollectionOpen(false);
+      const skipped = mode === "partial" ? `（跳过 ${conflict.duplicateModKeys.length} 个重复 Mod）` : "";
+      setLastMessage(`已从集合 "${col.name}" 合并${skipped}`);
+    },
+    [setLastMessage],
+  );
+
+  const handleAddCollection = useCallback(
+    (collectionId: string) => {
+      const col = useCollectionStore.getState().collections.find((c) => c.id === collectionId);
+      if (!col || !scheme) return;
+      const conflict = analyzeCollectionMerge(scheme, col);
+      if (conflict.duplicateModKeys.length > 0 || conflict.duplicateGroupNames.length > 0) {
+        setMergeConflict({ collection: col, conflict });
+      } else {
+        applyCollectionMerge(col, conflict, "all");
+      }
+    },
+    [scheme, applyCollectionMerge],
+  );
+
   const contextKeys = useMemo(() => {
     if (!contextMenu) return [];
     return [contextMenu.key];
@@ -238,7 +316,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
           onDelete={(name) => void handleDelete(name)}
           headerAction={
             <button
-              onClick={() => setLastMessage("请使用方案文件的导入/新建功能（待补充）")}
+              onClick={() => setCreateSchemeOpen(true)}
               className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-slate-700/70 transition-colors"
             >
               + 新建方案
@@ -263,12 +341,37 @@ export default function SchemesPage({ mods, onActivate }: Props) {
           </button>
         )}
         {scheme && (
-          <button
-            onClick={() => setAddOpen(true)}
-            className="text-xs px-2.5 py-1 bg-green-600 hover:bg-green-500 text-white rounded cursor-pointer"
-          >
-            ＋ 添加 Mod
-          </button>
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setAddMenuOpen((v) => !v)}
+              className="text-xs px-2.5 py-1 bg-green-600 hover:bg-green-500 text-white rounded cursor-pointer"
+            >
+              ＋ 添加 ▾
+            </button>
+            {addMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-44 bg-slate-800 border border-slate-600
+                              rounded-lg shadow-xl z-50 py-1">
+                <button
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    setAddOpen(true);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700/70 transition-colors"
+                >
+                  添加 Mod…
+                </button>
+                <button
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    setAddCollectionOpen(true);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700/70 transition-colors"
+                >
+                  添加集合…
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -318,6 +421,100 @@ export default function SchemesPage({ mods, onActivate }: Props) {
         />
       )}
 
+      {/* ★ v3: create-scheme modal */}
+      {createSchemeOpen && (
+        <CreateDialog
+          title="新建方案"
+          namePlaceholder="方案名称..."
+          defaultName={`方案 ${new Date().toLocaleDateString("zh-CN")}`}
+          onSubmit={(name) => void handleCreateScheme(name)}
+          onClose={() => setCreateSchemeOpen(false)}
+        />
+      )}
+
+      {/* ★ v3: add-collection picker */}
+      {addCollectionOpen && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60">
+          <div className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl w-[420px] max-h-[70vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700">
+              <h2 className="text-sm font-semibold text-slate-200">从集合添加</h2>
+              <button onClick={() => setAddCollectionOpen(false)} className="text-slate-500 hover:text-slate-300 cursor-pointer text-lg leading-none">×</button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+              {collections.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-6">暂无集合</p>
+              ) : (
+                collections.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => handleAddCollection(c.id)}
+                    className="w-full text-left px-3 py-2 rounded text-xs text-slate-200 hover:bg-slate-700/70 transition-colors"
+                  >
+                    <span className="block truncate">{c.name}</span>
+                    <span className="block text-[10px] text-slate-500">
+                      {c.modKeys.length} Mod{c.groups?.length ? ` · ${c.groups.length} 分组` : ""}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ★ v3: collection-merge conflict dialog — all or partial */}
+      {mergeConflict && (
+        <div className="fixed inset-0 z-[160] flex items-center justify-center bg-black/60">
+          <div className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl w-[440px] p-5">
+            <h2 className="text-sm font-semibold text-slate-200 mb-3">合并冲突</h2>
+            <p className="text-xs text-slate-400 mb-2">集合「{mergeConflict.collection.name}」与当前方案存在以下冲突：</p>
+            <ul className="text-xs text-slate-300 space-y-1 mb-4">
+              {mergeConflict.conflict.duplicateModKeys.length > 0 && (
+                <li>🔁 重复 Mod：{mergeConflict.conflict.duplicateModKeys.length} 个已存在于方案</li>
+              )}
+              {mergeConflict.conflict.duplicateGroupNames.length > 0 && (
+                <li>🗂 分组名冲突：{mergeConflict.conflict.duplicateGroupNames.join("、")}</li>
+              )}
+            </ul>
+            <p className="text-xs text-slate-500 mb-4">
+              全部调整：合并全部内容（重复项去重、分组强制合并）；部分调整：跳过冲突项（重复 Mod 与同名分组不并入），只添加其余部分。
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setMergeConflict(null)}
+                className="text-xs px-3 py-1.5 border border-slate-600 text-slate-300 rounded cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                onClick={() =>
+                  applyCollectionMerge(
+                    mergeConflict.collection,
+                    mergeConflict.conflict,
+                    "partial",
+                  )
+                }
+                className="text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded cursor-pointer"
+              >
+                部分调整（跳过冲突）
+              </button>
+              <button
+                onClick={() =>
+                  applyCollectionMerge(
+                    mergeConflict.collection,
+                    mergeConflict.conflict,
+                    "all",
+                  )
+                }
+                className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded cursor-pointer"
+              >
+                全部调整
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mod action menu */}
       {contextMenu && menuMod && (
         <ModActionMenu
@@ -333,7 +530,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
           onAddToScheme={(name) => void handleAddToScheme(name, contextKeys)}
           onAddToCollection={(id) => handleAddToCollection(id, contextKeys)}
           onCreateScheme={() => {
-            setLastMessage("请到方案列表创建新方案（导入/新建入口待补充）");
+            setCreateSchemeOpen(true);
           }}
           onCreateCollection={() => {
             setLastMessage("请到集合页新建集合");

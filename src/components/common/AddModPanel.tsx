@@ -23,6 +23,12 @@ export default function AddModPanel({ mods, existingKeys, targetLabel, onAdd, on
 
   const selectedKeys = useMemo(() => selected, [selected]);
 
+  // ★ v3: exclude mods already in the target container (hide, not grey out)
+  const availableMods = useMemo(
+    () => mods.filter((m) => !existingKeys.has(`${m.source}_${m.fileId}`)),
+    [mods, existingKeys],
+  );
+
   const toggleSelect = (key: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -46,11 +52,10 @@ export default function AddModPanel({ mods, existingKeys, targetLabel, onAdd, on
         {/* Full filter/view/card stack (shared with read-Mods page) */}
         <div className="flex-1 flex flex-col overflow-hidden min-h-0">
           <MemberModList
-            mods={mods}
+            mods={availableMods}
             selectable
             selectedKeys={selectedKeys}
             onToggleSelect={toggleSelect}
-            existingKeys={existingKeys}
             emptyAction={
               <p className="text-xs text-slate-600">无匹配 Mod</p>
             }

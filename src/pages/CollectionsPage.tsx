@@ -7,6 +7,7 @@ import type { ModInfo, ModMeta } from "../lib/types";
 import ModActionMenu from "../components/common/ModActionMenu";
 import AddModPanel from "../components/common/AddModPanel";
 import ContainerSelect from "../components/common/ContainerSelect";
+import CreateDialog from "../components/common/CreateDialog";
 import MemberModList from "../components/ModList/MemberModList";
 
 interface Props {
@@ -34,8 +35,8 @@ export default function CollectionsPage({
   const [contextMenu, setContextMenu] = useState<{
     x: number; y: number; key: string; mod: ModInfo;
   } | null>(null);
-  const [newName, setNewName] = useState("");
-  const [showNew, setShowNew] = useState(false);
+  // ★ v3: create-collection modal (replaces inline input)
+  const [createOpen, setCreateOpen] = useState(false);
   const setLastMessage = useAppStore((s) => s.setLastMessage);
   const seedHandledRef = useRef(false);
 
@@ -51,8 +52,6 @@ export default function CollectionsPage({
       modMeta: seed.modMeta,
     });
     setSelectedId(col.id);
-    setShowNew(true);
-    setNewName(col.name);
     onSeedConsumed?.();
   }, [seed, create, onSeedConsumed, setSelectedId]);
 
@@ -121,7 +120,7 @@ export default function CollectionsPage({
           }}
           headerAction={
             <button
-              onClick={() => setShowNew(true)}
+              onClick={() => setCreateOpen(true)}
               className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-slate-700/70 transition-colors"
             >
               + 新建集合
@@ -129,41 +128,13 @@ export default function CollectionsPage({
           }
         />
 
-        {!showNew ? null : (
-          <div className="flex items-center gap-1">
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && newName.trim()) {
-                  const col = create({ name: newName.trim(), modKeys: [], modMeta: {} });
-                  setSelectedId(col.id);
-                  setShowNew(false);
-                  setNewName("");
-                }
-              }}
-              placeholder="集合名称..."
-              className="text-xs px-2 py-1 bg-slate-900 border border-slate-600 rounded text-slate-200 outline-none w-40"
-              autoFocus
-            />
-            <button
-              onClick={() => {
-                const col = create({ name: newName.trim() || "未命名集合", modKeys: [], modMeta: {} });
-                setSelectedId(col.id);
-                setShowNew(false);
-                setNewName("");
-              }}
-              className="text-xs px-2 py-1 bg-green-600 hover:bg-green-500 text-white rounded cursor-pointer"
-            >
-              创建
-            </button>
-            <button
-              onClick={() => setShowNew(false)}
-              className="text-xs px-2 py-1 border border-slate-600 text-slate-400 rounded cursor-pointer"
-            >
-              取消
-            </button>
-          </div>
+        {!createOpen && (
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="text-xs px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded cursor-pointer"
+          >
+            + 新建集合
+          </button>
         )}
 
         {selected && (
@@ -263,8 +234,24 @@ export default function CollectionsPage({
             setLastMessage("已加入集合");
           }}
           onCreateScheme={() => setLastMessage("请到方案页创建新方案")}
-          onCreateCollection={() => setLastMessage("请使用上方新建集合")}
+          onCreateCollection={() => setCreateOpen(true)}
           onRemoveFromContainer={() => handleRemoveMember(contextMenu.key)}
+        />
+      )}
+
+      {/* ★ v3: create-collection modal */}
+      {createOpen && (
+        <CreateDialog
+          title="新建集合"
+          namePlaceholder="集合名称..."
+          showDescription
+          defaultName={`集合 ${new Date().toLocaleDateString("zh-CN")}`}
+          onSubmit={(name, description) => {
+            const col = create({ name, description, modKeys: [], modMeta: {} });
+            setSelectedId(col.id);
+            setLastMessage(`集合 "${name}" 已创建`);
+          }}
+          onClose={() => setCreateOpen(false)}
         />
       )}
     </div>

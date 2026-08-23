@@ -1,4 +1,4 @@
-import type { ModInfo, ProfileData, ProfileDataV1 } from "../lib/types";
+import type { ModCollection, ModInfo, ProfileData, ProfileDataV1 } from "../lib/types";
 import { loadProfile, saveProfile } from "../lib/tauriApi";
 import { isProfileV2, migrateProfileV1 } from "./migrateProfile";
 
@@ -76,4 +76,107 @@ export function buildModMeta(mods: ModInfo[], keys: string[]): ProfileData["modM
 /** Persist a scheme back to disk. */
 export async function saveScheme(data: ProfileData): Promise<void> {
   await saveProfile(data.name, JSON.stringify(data, null, 2));
+}
+
+// ── Merge collection into scheme (with conflict analysis) ─────────────────
+
+export interface CollectionMergeConflict {
+  /** Collection mod keys already present in the scheme. */
+  duplicateModKeys: string[];
+  /** Collection group names that collide with existing scheme group names. */
+  duplicateGroupNames: string[];
+}
+
+/** Analyze what would conflict when merging a collection into a scheme. */
+export function analyzeCollectionMerge(
+  scheme: ProfileData,
+  collection: ModCollection,
+): CollectionMergeConflict {
+  const memberSet = new Set(scheme.modKeys ?? []);
+  const duplicateModKeys = collection.modKeys.filter((k) => memberSet.has(k));
+
+  const schemeGroupNames = new Set((scheme.groups ?? []).map((g) => g.name));
+  const duplicateGroupNames = (collection.groups ?? [])
+    .map((g) => g.name)
+    .filter((n) => schemeGroupNames.has(n));
+
+  return { duplicateModKeys, duplicateGroupNames };
+}
+
+/**
+ * Merge a collection into a scheme.
+ * @param mode "all" — apply everything (dedup mods, force-merge groups);
+ *             "partial" — skip conflicts (duplicate mods + colliding groups), apply the rest.
+ */
+export function mergeCollectionIntoScheme(
+  scheme: ProfileData,
+  collection: ModCollection,
+  conflict: CollectionMergeConflict,
+  mode: "all" | "partial",
+): ProfileData {
+  const skipMods = new Set(
+    mode === "partial" ? conflict.duplicateModKeys : [],
+  );
+  const skipGroups = new Set(
+    mode === "partial" ? conflict.duplicateGroupNames : [],
+  );
+
+  // 1. Merge mod members (enabled by default, dedup)
+  const memberSet = new Set(scheme.modKeys ?? []);
+  const enabledSet = new Set(scheme.enabledMods ?? []);
+  for (const k of collection.modKeys) {
+    if (skipMods.has(k)) continue;
+    memberSet.add(k);
+    enabledSet.add(k);
+  }
+
+  // 2. Merge groups: new groups appended with unique ids; mods assigned accordingly
+  const existingGroups = scheme.groups ?? [];
+  const newGroups = existingGroups.map((g) => ({ ...g }));
+  for (const g of collection.groups ?? []) {
+    if (skipGroups.has(g.name)) {
+      // Partial mode: still merge the group's mods into the scheme (ungrouped) unless duplicated
+      for (const mk of g.modKeys) {
+        if (!skipMods.has(mk)) {
+          memberSet.add(mk);
+          enabledSet.add(mk);
+        }
+      }
+      continue;
+    }
+    const gid = `col-${crypto.randomUUID()}`;
+    // ensure each member is in memberSet + enabled
+    for (const mk of g.modKeys) {
+      if (!skipMods.has(mk)) memberSet.add(mk);
+    }
+    for (const mk of g.modKeys) {
+      if (!skipMods.has(mk)) enabledSet.add(mk);
+    }
+    newGroups.push({
+      id: gid,
+      name: g.name,
+      collapsed: false,
+      modKeys: g.modKeys.filter((mk) => !skipMods.has(mk)),
+    });
+  }
+
+  // 3. Ungrouped collection mods (not in any collection group)
+  const groupedMods = new Set(
+    (collection.groups ?? []).flatMap((g) => g.modKeys),
+  );
+  for (const k of collection.modKeys) {
+    if (skipMods.has(k)) continue;
+    if (!groupedMods.has(k)) {
+      memberSet.add(k);
+      enabledSet.add(k);
+    }
+  }
+
+  return {
+    ...scheme,
+    modKeys: [...memberSet],
+    enabledMods: [...enabledSet],
+    modMeta: { ...(scheme.modMeta ?? {}), ...(collection.modMeta ?? {}) },
+    groups: newGroups,
+  };
 }
