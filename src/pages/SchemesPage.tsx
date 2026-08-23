@@ -6,9 +6,10 @@ import { useConflictDetection } from "../hooks/useConflictDetection";
 import { loadScheme, saveScheme, addModsToScheme, removeModsFromScheme, buildModMeta } from "../utils/schemeMembers";
 import { detectMissingMods } from "../utils/migrateProfile";
 import type { ModInfo, ModMeta, ProfileData, ProfileMeta } from "../lib/types";
-import ModCard from "../components/ModList/ModCard";
 import ModActionMenu from "../components/common/ModActionMenu";
 import AddModPanel from "../components/common/AddModPanel";
+import ContainerSelect from "../components/common/ContainerSelect";
+import MemberModList from "../components/ModList/MemberModList";
 import MissingModsDialog from "../components/ProfileManager/MissingModsDialog";
 import { createLogger } from "../lib/logger";
 
@@ -220,6 +221,29 @@ export default function SchemesPage({ mods, onActivate }: Props) {
         <span className="text-sm font-medium text-slate-200">方案管理</span>
         <span className="text-xs text-slate-500">成员编辑 · 冲突提示 · 添加 Mod</span>
         <div className="flex-1" />
+
+        {/* Scheme selector dropdown (delete inside) */}
+        <ContainerSelect
+          placeholder="选择方案..."
+          options={profiles.map((p) => ({
+            key: p.name,
+            label: p.name,
+            count: p.modCount,
+            meta: activeSchemeName === p.name ? "●" : undefined,
+          }))}
+          selectedKey={selectedName}
+          onSelect={(name) => setSelectedName(name)}
+          onDelete={(name) => void handleDelete(name)}
+          headerAction={
+            <button
+              onClick={() => setLastMessage("请使用方案文件的导入/新建功能（待补充）")}
+              className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-slate-700/70 transition-colors"
+            >
+              + 新建方案
+            </button>
+          }
+        />
+
         {dirty && (
           <button
             onClick={() => void handleSave()}
@@ -236,129 +260,43 @@ export default function SchemesPage({ mods, onActivate }: Props) {
             激活此方案
           </button>
         )}
+        {scheme && (
+          <button
+            onClick={() => setAddOpen(true)}
+            className="text-xs px-2.5 py-1 bg-green-600 hover:bg-green-500 text-white rounded cursor-pointer"
+          >
+            ＋ 添加 Mod
+          </button>
+        )}
       </div>
 
-      <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* Scheme list */}
-        <div className="w-56 shrink-0 border-r border-slate-700 overflow-y-auto p-2 space-y-1">
-          <p className="text-[10px] text-slate-500 px-1 py-1">方案列表</p>
-          {profiles.length === 0 && (
-            <p className="text-xs text-slate-600 px-1 py-2">暂无方案</p>
-          )}
-          {profiles.map((p) => {
-            const active = activeSchemeName === p.name;
-            const selected = selectedName === p.name;
-            return (
-              <div
-                key={p.name}
-                onClick={() => setSelectedName(p.name)}
-                className={`px-2 py-1.5 rounded cursor-pointer transition-colors text-xs ${
-                  selected
-                    ? "bg-blue-900/40 border border-blue-700/50"
-                    : "hover:bg-slate-700/50 border border-transparent"
-                }`}
-              >
-                <div className="flex items-center gap-1">
-                  {active && <span className="text-blue-400 text-[10px]">●</span>}
-                  <span className={`flex-1 truncate ${active ? "text-blue-300" : "text-slate-300"}`}>
-                    {p.name}
-                  </span>
-                  <span className="text-slate-500 text-[10px]">{p.modCount}</span>
-                </div>
-                <div className="flex gap-1 mt-1">
-                  {active ? (
-                    <span className="text-[9px] text-blue-400">已激活</span>
-                  ) : (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void (async () => {
-                          const data = await loadScheme(p.name);
-                          if (data) onActivate(data);
-                        })();
-                      }}
-                      className="text-[9px] px-1 py-0.5 bg-blue-600 hover:bg-blue-500 text-white rounded cursor-pointer"
-                    >
-                      激活
-                    </button>
-                  )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleDelete(p.name);
-                    }}
-                    className="text-[9px] px-1 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded cursor-pointer"
-                  >
-                    删除
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Member list */}
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-          <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-700/60 shrink-0">
-            <span className="text-xs text-slate-400 truncate">
-              {scheme ? `成员: ${scheme.name}` : "选择一个方案查看成员"}
-            </span>
-            <span className="text-xs text-slate-600">
-              {scheme ? `${memberMods.length} 个` : ""}
-            </span>
-            <div className="flex-1" />
-            {scheme && (
+      {/* Member list — reused filter/view/card stack */}
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        {!scheme ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-sm text-slate-500">从上方选择一个方案查看成员</p>
+          </div>
+        ) : (
+          <MemberModList
+            mods={displayMods}
+            conflictMap={conflictMap}
+            modTitles={modTitles}
+            onToggle={(fileId, enabled) => handleToggleMember(fileId, enabled)}
+            onOrderChange={handleOrderChange}
+            onContextMenu={(e, mod, key) => {
+              e.preventDefault();
+              setContextMenu({ x: e.clientX, y: e.clientY, key, mod });
+            }}
+            emptyAction={
               <button
                 onClick={() => setAddOpen(true)}
-                className="text-xs px-2.5 py-1 bg-green-600 hover:bg-green-500 text-white rounded cursor-pointer"
+                className="text-xs px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded cursor-pointer"
               >
-                ＋ 添加 Mod
+                ＋ 添加第一个 Mod
               </button>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-            {!scheme ? (
-              <p className="text-sm text-slate-500 text-center py-12">从左侧选择一个方案</p>
-            ) : displayMods.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 py-12">
-                <p className="text-sm text-slate-500">该方案暂无成员</p>
-                <button
-                  onClick={() => setAddOpen(true)}
-                  className="text-xs px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded cursor-pointer"
-                >
-                  ＋ 添加第一个 Mod
-                </button>
-              </div>
-            ) : (
-              displayMods.map((m) => {
-                const key = `${m.source}_${m.fileId}`;
-                return (
-                  <div
-                    key={key}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setContextMenu({ x: e.clientX, y: e.clientY, key, mod: m });
-                    }}
-                  >
-                    <ModCard
-                      mod={m}
-                      disabled={false}
-                      onToggle={(fileId, enabled) => handleToggleMember(fileId, enabled)}
-                      onSelect={() => {}}
-                      onOrderUp={() => handleOrderChange(key, m.order + 1)}
-                      onOrderDown={() => handleOrderChange(key, Math.max(0, m.order - 1))}
-                      onOrderChange={(order) => handleOrderChange(key, order)}
-                      conflicts={conflictMap.get(key)}
-                      modTitles={modTitles}
-                      viewMode="detailed"
-                    />
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
+            }
+          />
+        )}
       </div>
 
       {/* Add-mods panel */}

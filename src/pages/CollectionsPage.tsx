@@ -4,9 +4,10 @@ import { useAppStore } from "../store/useAppStore";
 import { useConflictDetection } from "../hooks/useConflictDetection";
 import { loadScheme, addModsToScheme, saveScheme, buildModMeta } from "../utils/schemeMembers";
 import type { ModInfo, ModMeta } from "../lib/types";
-import ModCard from "../components/ModList/ModCard";
 import ModActionMenu from "../components/common/ModActionMenu";
 import AddModPanel from "../components/common/AddModPanel";
+import ContainerSelect from "../components/common/ContainerSelect";
+import MemberModList from "../components/ModList/MemberModList";
 
 interface Props {
   mods: ModInfo[];
@@ -101,14 +102,32 @@ export default function CollectionsPage({
         <span className="text-sm font-medium text-slate-200">集合管理</span>
         <span className="text-xs text-slate-500">离线分组包 · 成员浏览 · 冲突提示</span>
         <div className="flex-1" />
-        {!showNew ? (
-          <button
-            onClick={() => setShowNew(true)}
-            className="text-xs px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded cursor-pointer"
-          >
-            + 新建集合
-          </button>
-        ) : (
+
+        {/* Collection selector dropdown (delete + create-scheme inside) */}
+        <ContainerSelect
+          placeholder="选择集合..."
+          options={collections.map((c) => ({
+            key: c.id,
+            label: c.name,
+            count: c.modKeys.length,
+          }))}
+          selectedKey={selectedId}
+          onSelect={(id) => setSelectedId(id)}
+          onDelete={(id) => {
+            remove(id);
+            if (selectedId === id) setSelectedId(null);
+          }}
+          headerAction={
+            <button
+              onClick={() => setShowNew(true)}
+              className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-slate-700/70 transition-colors"
+            >
+              + 新建集合
+            </button>
+          }
+        />
+
+        {!showNew ? null : (
           <div className="flex items-center gap-1">
             <input
               value={newName}
@@ -144,118 +163,51 @@ export default function CollectionsPage({
             </button>
           </div>
         )}
+
+        {selected && (
+          <>
+            <button
+              onClick={() => onCreateSchemeFromCollection(selected.id)}
+              className="text-xs px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded cursor-pointer"
+            >
+              建方案
+            </button>
+            <button
+              onClick={() => setAddOpen(true)}
+              className="text-xs px-2.5 py-1 bg-green-600 hover:bg-green-500 text-white rounded cursor-pointer"
+            >
+              ＋ 添加 Mod
+            </button>
+          </>
+        )}
       </div>
 
-      <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* Collection list */}
-        <div className="w-56 shrink-0 border-r border-slate-700 overflow-y-auto p-2 space-y-1">
-          <p className="text-[10px] text-slate-500 px-1 py-1">集合列表</p>
-          {collections.length === 0 && (
-            <p className="text-xs text-slate-600 px-1 py-2">暂无集合</p>
-          )}
-          {collections.map((c) => {
-            const selectedFlag = selectedId === c.id;
-            return (
-              <div
-                key={c.id}
-                onClick={() => setSelectedId(c.id)}
-                className={`px-2 py-1.5 rounded cursor-pointer transition-colors text-xs ${
-                  selectedFlag
-                    ? "bg-purple-900/40 border border-purple-700/50"
-                    : "hover:bg-slate-700/50 border border-transparent"
-                }`}
-              >
-                <div className="flex items-center gap-1">
-                  <span className={`flex-1 truncate ${selectedFlag ? "text-purple-300" : "text-slate-300"}`}>
-                    {c.name}
-                  </span>
-                  <span className="text-slate-500 text-[10px]">{c.modKeys.length}</span>
-                </div>
-                <div className="flex gap-1 mt-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onCreateSchemeFromCollection(c.id);
-                    }}
-                    className="text-[9px] px-1 py-0.5 bg-blue-600 hover:bg-blue-500 text-white rounded cursor-pointer"
-                  >
-                    建方案
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      remove(c.id);
-                      if (selectedId === c.id) setSelectedId(null);
-                    }}
-                    className="text-[9px] px-1 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded cursor-pointer"
-                  >
-                    删除
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Member list */}
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-          <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-700/60 shrink-0">
-            <span className="text-xs text-slate-400 truncate">
-              {selected ? `成员: ${selected.name}` : "选择一个集合查看成员"}
-            </span>
-            <span className="text-xs text-slate-600">
-              {selected ? `${memberMods.length} 个` : ""}
-            </span>
-            <div className="flex-1" />
-            {selected && (
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        {/* Member list — reused filter/view/card stack (read-only) */}
+        {!selected ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-sm text-slate-500">从上方选择一个集合查看成员</p>
+          </div>
+        ) : (
+          <MemberModList
+            mods={memberMods}
+            conflictMap={conflictMap}
+            modTitles={modTitles}
+            readOnly
+            onContextMenu={(e, mod, key) => {
+              e.preventDefault();
+              setContextMenu({ x: e.clientX, y: e.clientY, key, mod });
+            }}
+            emptyAction={
               <button
                 onClick={() => setAddOpen(true)}
-                className="text-xs px-2.5 py-1 bg-green-600 hover:bg-green-500 text-white rounded cursor-pointer"
+                className="text-xs px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded cursor-pointer"
               >
-                ＋ 添加 Mod
+                ＋ 添加第一个 Mod
               </button>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-            {!selected ? (
-              <p className="text-sm text-slate-500 text-center py-12">从左侧选择一个集合</p>
-            ) : memberMods.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 py-12">
-                <p className="text-sm text-slate-500">该集合暂无成员</p>
-                <button
-                  onClick={() => setAddOpen(true)}
-                  className="text-xs px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded cursor-pointer"
-                >
-                  ＋ 添加第一个 Mod
-                </button>
-              </div>
-            ) : (
-              memberMods.map((m) => {
-                const key = `${m.source}_${m.fileId}`;
-                return (
-                  <div
-                    key={key}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setContextMenu({ x: e.clientX, y: e.clientY, key, mod: m });
-                    }}
-                  >
-                    <ModCard
-                      mod={m}
-                      disabled
-                      onToggle={() => {}}
-                      onSelect={() => {}}
-                      conflicts={conflictMap.get(key)}
-                      modTitles={modTitles}
-                      viewMode="detailed"
-                    />
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
+            }
+          />
+        )}
       </div>
 
       {/* Add-mods panel */}
