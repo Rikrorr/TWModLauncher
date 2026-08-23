@@ -50,7 +50,10 @@ export default function LogsPage() {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    const t = setTimeout(() => {
+      void refresh();
+    }, 0);
+    return () => clearTimeout(t);
   }, [refresh]);
 
   const filtered = filter === "all" ? lines : lines.filter((l) => l.level === filter);

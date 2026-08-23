@@ -50,7 +50,10 @@ export default function LaunchPage({
   };
 
   useEffect(() => {
-    void refresh();
+    const t = setTimeout(() => {
+      void refresh();
+    }, 0);
+    return () => clearTimeout(t);
   }, []);
 
   // Close scheme dropdown on outside click / Escape

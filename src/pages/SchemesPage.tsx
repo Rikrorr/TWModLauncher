@@ -45,14 +45,17 @@ export default function SchemesPage({ mods, onActivate }: Props) {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    const t = setTimeout(() => {
+      void refresh();
+    }, 0);
+    return () => clearTimeout(t);
   }, [refresh]);
 
   // Load the selected scheme
   useEffect(() => {
     if (!selectedName) {
-      setScheme(null);
-      return;
+      const t = setTimeout(() => setScheme(null), 0);
+      return () => clearTimeout(t);
     }
     let cancelled = false;
     loadScheme(selectedName).then((data) => {

@@ -47,7 +47,10 @@ export default function ModsPage({
   }, []);
 
   useEffect(() => {
-    void refreshProfiles();
+    const t = setTimeout(() => {
+      void refreshProfiles();
+    }, 0);
+    return () => clearTimeout(t);
   }, [refreshProfiles]);
 
   const selectedMod = selectedModKey ? mods.find((m) => `${m.source}_${m.fileId}` === selectedModKey) ?? null : null;
