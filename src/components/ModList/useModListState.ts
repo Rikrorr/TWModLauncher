@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ModInfo } from "../../lib/types";
+import { useCategoryStore } from "../../store/useCategoryStore";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -125,6 +126,15 @@ export function useModListState(mods: ModInfo[]) {
   const [catFilterDropdownOpen, setCatFilterDropdownOpen] = useState(false);
   const catFilterDropdownRef = useRef<HTMLDivElement>(null);
 
+  // ★ v3: user tags (custom categories) — merged into the tag filter.
+  // Read from store directly so additions re-render the dropdown.
+  const allUserTags = (() => {
+    const names = new Set<string>();
+    const state = useCategoryStore.getState();
+    for (const c of state.categories) names.add(c.name);
+    return [...names].sort((a, b) => a.localeCompare(b, "zh"));
+  })();
+
   // View mode
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const cached = loadPrefs();
@@ -218,7 +228,9 @@ export function useModListState(mods: ModInfo[]) {
     setTagDropdownOpen,
     tagDropdownRef,
     allTags,
-    // ★ v2: user-category filter
+    // ★ v3: user tags merged into the tag filter
+    allUserTags,
+    // ★ v2: user-category filter (kept for back-compat; UI merged into tags)
     activeCatIds,
     setActiveCatIds,
     catFilterDropdownOpen,

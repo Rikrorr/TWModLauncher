@@ -309,18 +309,67 @@ export default function ModCard({
 
       {/* Info */}
       <div className="flex-1 min-w-0">
+        {/* ★ v3: first row = 名称 + 来源标签 + 官方标签 + 自定义标签 */}
         <div className="flex items-center gap-2 flex-wrap">
           <h3
-            className={`font-semibold text-sm truncate ${
+            className={`font-semibold text-sm truncate max-w-44 ${
               mod.enabled ? "text-slate-100" : "text-slate-400"
             }`}
             title={mod.title}
           >
             {renderColoredText(mod.title)}
           </h3>
-          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${sourceColor}`} title={sourceLabel}>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${sourceColor}`} title={sourceLabel}>
             {sourceIcon} {sourceLabel}
           </span>
+          {/* Official tags */}
+          {mod.tagList.slice(0, 4).map((tag) => (
+            <span
+              key={tag}
+              className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 shrink-0"
+            >
+              {tag}
+            </span>
+          ))}
+          {mod.tagList.length > 4 && (
+            <span className="text-[10px] text-slate-500 shrink-0">+{mod.tagList.length - 4}</span>
+          )}
+          {/* ★ v3: user-defined tags (click to edit) */}
+          {catIds.map((cid) => {
+            const def = catDefs.find((c) => c.id === cid);
+            if (!def) return null;
+            return (
+              <button
+                key={cid}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCatPickerOpen(true);
+                }}
+                className="text-[10px] px-1.5 py-0.5 rounded border shrink-0 inline-flex items-center gap-1
+                           hover:brightness-125 cursor-pointer transition-all"
+                style={{
+                  color: def.color ?? "#a855f7",
+                  borderColor: (def.color ?? "#a855f7") + "66",
+                  background: (def.color ?? "#a855f7") + "1a",
+                }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: def.color ?? "#a855f7" }} />
+                {def.name}
+              </button>
+            );
+          })}
+          {catIds.length === 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setCatPickerOpen(true);
+              }}
+              className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-slate-600
+                         text-slate-500 hover:text-slate-300 hover:border-slate-400 shrink-0 cursor-pointer"
+            >
+              + 标签
+            </button>
+          )}
           {/* ★ v2: conflict badge */}
           {conflicts && conflicts.length > 0 && (
             <button
@@ -339,7 +388,7 @@ export default function ModCard({
             </button>
           )}
           {mod.parseError && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded border bg-red-900/60 text-red-300 border-red-700">
+            <span className="text-[10px] px-1.5 py-0.5 rounded border bg-red-900/60 text-red-300 border-red-700 shrink-0">
               解析失败
             </span>
           )}
@@ -384,59 +433,6 @@ export default function ModCard({
             {renderColoredText(mod.description)}
           </p>
         )}
-
-        {mod.tagList.length > 0 && (
-          <div className="flex gap-1 mt-1.5 flex-wrap">
-            {mod.tagList.map((tag) => (
-              <span
-                key={tag}
-                className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* ★ v2: user categories — colored badges, click to edit */}
-        <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-          {catIds.length > 0 ? (
-            catIds.map((cid) => {
-              const def = catDefs.find((c) => c.id === cid);
-              if (!def) return null;
-              return (
-                <button
-                  key={cid}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCatPickerOpen(true);
-                  }}
-                  className="text-[10px] px-1.5 py-0.5 rounded border inline-flex items-center gap-1
-                             hover:brightness-125 cursor-pointer transition-all"
-                  style={{
-                    color: def.color ?? "#3b82f6",
-                    borderColor: (def.color ?? "#3b82f6") + "66",
-                    background: (def.color ?? "#3b82f6") + "1a",
-                  }}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: def.color ?? "#3b82f6" }} />
-                  {def.name}
-                </button>
-              );
-            })
-          ) : (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setCatPickerOpen(true);
-              }}
-              className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-slate-600
-                         text-slate-500 hover:text-slate-300 hover:border-slate-400 cursor-pointer"
-            >
-              + 分类
-            </button>
-          )}
-        </div>
 
         {/* ★ v2: user note — 📝 block with add/edit entry */}
         {viewMode === "detailed" && (

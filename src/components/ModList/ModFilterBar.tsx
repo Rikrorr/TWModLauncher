@@ -19,17 +19,12 @@ interface Props {
   onToggleTagDropdown: () => void;
   tagDropdownRef: React.RefObject<HTMLDivElement | null>;
   allTags: string[];
+  /** ★ v3: user-defined tags merged into the tag dropdown */
+  allUserTags: string[];
   viewMode: ViewMode;
   onToggleViewMode: () => void;
   onApplyOrder: () => void;
   onGroupCreateMouseDown: (e: React.MouseEvent) => void;
-  // ★ v2: user-category filter
-  allUserCategories: { id: string; name: string; color?: string }[];
-  activeCatIds: Set<string>;
-  onToggleCatId: (catId: string) => void;
-  catFilterDropdownOpen: boolean;
-  onToggleCatFilterDropdown: () => void;
-  catFilterDropdownRef: React.RefObject<HTMLDivElement | null>;
 }
 
 export default function ModFilterBar({
@@ -54,12 +49,7 @@ export default function ModFilterBar({
   onToggleViewMode,
   onApplyOrder,
   onGroupCreateMouseDown,
-  allUserCategories,
-  activeCatIds,
-  onToggleCatId,
-  catFilterDropdownOpen,
-  onToggleCatFilterDropdown,
-  catFilterDropdownRef,
+  allUserTags,
 }: Props) {
   const enabledLabel =
     enabledFilter === "all" ? "全部" : enabledFilter === "enabled" ? "已启用" : "已禁用";
@@ -173,10 +163,10 @@ export default function ModFilterBar({
               className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-30 bg-slate-800
                          border border-slate-600 rounded shadow-lg py-1 max-h-60 overflow-y-auto min-w-44"
             >
-              {allTags.length === 0 && (
+              {allTags.length === 0 && allUserTags.length === 0 && (
                 <p className="px-3 py-2 text-xs text-slate-500">暂无标签</p>
               )}
-              {allTags.length > 0 && activeTags.size > 0 && (
+              {activeTags.size > 0 && (
                 <div className="flex items-center gap-1 px-3 py-1 border-b border-slate-600 mb-1">
                   <span className="text-xs text-slate-500">匹配:</span>
                   <button
@@ -203,6 +193,7 @@ export default function ModFilterBar({
                   </button>
                 </div>
               )}
+              {/* Official tags */}
               {allTags.map((tag) => {
                 const checked = activeTags.has(tag);
                 return (
@@ -221,54 +212,23 @@ export default function ModFilterBar({
                   </label>
                 );
               })}
-            </div>
-          )}
-        </div>
-
-        {/* ★ v2: user-category dropdown */}
-        <div className="relative shrink-0" ref={catFilterDropdownRef}>
-          <button
-            onClick={onToggleCatFilterDropdown}
-            className={`text-xs px-2 py-1.5 border rounded text-slate-300
-                       hover:border-slate-400 cursor-pointer transition-colors
-                       flex items-center gap-1 ${
-                         activeCatIds.size > 0
-                           ? "border-purple-500 bg-purple-900/30"
-                           : "border-slate-600 bg-slate-800"
-                       }`}
-          >
-            自定义分类
-            {activeCatIds.size > 0 && (
-              <span className="text-[10px] text-purple-300 ml-0.5">({activeCatIds.size})</span>
-            )}
-            <svg className="w-3 h-3 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          {catFilterDropdownOpen && (
-            <div
-              className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-30 bg-slate-800
-                         border border-slate-600 rounded shadow-lg py-1 max-h-60 overflow-y-auto min-w-44"
-            >
-              {allUserCategories.length === 0 && (
-                <p className="px-3 py-2 text-xs text-slate-500">暂无自定义分类（右键 Mod 设置分类）</p>
-              )}
-              {allUserCategories.map((cat) => {
-                const checked = activeCatIds.has(cat.id);
+              {/* ★ v3: user-defined tags (merged) */}
+              {allUserTags.map((tag) => {
+                const checked = activeTags.has(tag);
                 return (
                   <label
-                    key={cat.id}
+                    key={`user-${tag}`}
                     className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300
                                hover:bg-slate-700 cursor-pointer transition-colors"
                   >
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={() => onToggleCatId(cat.id)}
+                      onChange={() => onToggleTag(tag)}
                       className="accent-purple-500"
                     />
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: cat.color ?? "#3b82f6" }} />
-                    {cat.name}
+                    <span className="w-2 h-2 rounded-full bg-purple-500 shrink-0" />
+                    {tag}
                   </label>
                 );
               })}

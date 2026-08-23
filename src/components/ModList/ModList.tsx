@@ -4,6 +4,7 @@ import { useModStore } from "../../store/useModStore";
 import { useAppStore } from "../../store/useAppStore";
 import { useCategoryStore } from "../../store/useCategoryStore";
 import { useConflictDetection } from "../../hooks/useConflictDetection";
+import { getUserTags } from "../../utils/userTags";
 import type { ModInfo, ModGroup } from "../../lib/types";
 import ModCard from "./ModCard";
 import ModFilterBar from "./ModFilterBar";
@@ -35,6 +36,8 @@ interface Props {
   onSelectMod: (key: string) => void;
   /** ★ v2: save current multi-selection as an offline collection */
   onSaveSelectionAsCollection?: () => void;
+  /** ★ v3: read-only browse mode (ModsPage) — toggle/order/apply-order disabled */
+  readOnly?: boolean;
   /** ★ v3: when provided, mod context menu uses ModActionMenu (加入/新建 two-level) */
   modMenu?: {
     schemes: { name: string; modCount?: number }[];
@@ -46,7 +49,7 @@ interface Props {
   };
 }
 
-export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollection, modMenu }: Props) {
+export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollection, modMenu, readOnly }: Props) {
   // ── Store ────────────────────────────────────────────────────────────────
   const mods = useModStore((s) => s.mods);
   const scanning = useModStore((s) => s.scanning);
@@ -61,8 +64,6 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
   const activeSchemeName = useAppStore((s) => s.activeSchemeName);
   const activeSchemeModKeys = useAppStore((s) => s.activeSchemeModKeys);
   const setActiveSchemeModKeys = useAppStore((s) => s.setActiveSchemeModKeys);
-  // ★ v2: user categories for the filter dropdown
-  const userCategories = useCategoryStore((s) => s.categories);
   // ★ v2: conflict detection within the active scheme member scope (if any).
   // Empty scope → no conflicts shown (global pool has no conflict semantics).
   const activeSchemeModKeysForConflict = useAppStore((s) => s.activeSchemeModKeys);
@@ -388,6 +389,8 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
 
   const handleOrderChange = useCallback(
     (key: string, order: number) => {
+      // ★ v3: read-only browse mode — no ordering
+      if (readOnly) return;
       // ★ v2: scheme-outside mods are read-only
       const memberSet = activeSchemeModKeys ? new Set(activeSchemeModKeys) : null;
       if (memberSet && !memberSet.has(key)) {
@@ -398,7 +401,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       setModOrder(key, order);
       setDirty(true);
     },
-    [setModOrder, setDirty, clearSelection, activeSchemeModKeys, setLastMessage],
+    [setModOrder, setDirty, clearSelection, activeSchemeModKeys, setLastMessage, readOnly],
   );
 
   const handleApplyOrder = useCallback(() => {
@@ -493,6 +496,8 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
   // ── Toggle handler ───────────────────────────────────────────────────────
   const handleToggle = useCallback(
     (fileId: number, enabled: boolean) => {
+      // ★ v3: read-only browse mode — no toggling
+      if (readOnly) return;
       // ★ v2: scheme-outside mods are read-only — cannot be toggled
       const key = `${useModStore.getState().mods.find((m) => m.fileId === fileId)?.source ?? 0}_${fileId}`;
       const memberSet = activeSchemeModKeys ? new Set(activeSchemeModKeys) : null;
@@ -504,7 +509,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       toggleMod(fileId, enabled);
       setDirty(true);
     },
-    [toggleMod, setDirty, clearSelection, activeSchemeModKeys, setLastMessage],
+    [toggleMod, setDirty, clearSelection, activeSchemeModKeys, setLastMessage, readOnly],
   );
 
   // ── Selection click handlers ──────────────────────────────────────────────
@@ -633,8 +638,14 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     if (filter.activeTags.size > 0) {
       result =
         filter.tagMode === "or"
-          ? result.filter((m) => m.tagList.some((t) => filter.activeTags.has(t)))
-          : result.filter((m) => [...filter.activeTags].every((t) => m.tagList.includes(t)));
+          ? result.filter((m) => {
+              const combined = [...m.tagList, ...getUserTags(m)];
+              return combined.some((t) => filter.activeTags.has(t));
+            })
+          : result.filter((m) => {
+              const combined = [...new Set([...m.tagList, ...getUserTags(m)])];
+              return [...filter.activeTags].every((t) => combined.includes(t));
+            });
     }
 
     // ★ v2: user-category filter (AND across selected categories)
@@ -788,25 +799,13 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
         onToggleTagDropdown={() => filter.setTagDropdownOpen((v) => !v)}
         tagDropdownRef={filter.tagDropdownRef}
         allTags={filter.allTags}
+        allUserTags={filter.allUserTags}
         viewMode={filter.viewMode}
         onToggleViewMode={() =>
           filter.setViewMode((v) => (v === "detailed" ? "compact" : "detailed"))
         }
-        onApplyOrder={handleApplyOrder}
+        onApplyOrder={readOnly ? () => {} : handleApplyOrder}
         onGroupCreateMouseDown={handleGroupCreateMouseDown}
-        allUserCategories={userCategories}
-        activeCatIds={filter.activeCatIds}
-        onToggleCatId={(catId) =>
-          filter.setActiveCatIds((prev) => {
-            const next = new Set(prev);
-            if (next.has(catId)) next.delete(catId);
-            else next.add(catId);
-            return next;
-          })
-        }
-        catFilterDropdownOpen={filter.catFilterDropdownOpen}
-        onToggleCatFilterDropdown={() => filter.setCatFilterDropdownOpen((v) => !v)}
-        catFilterDropdownRef={filter.catFilterDropdownRef}
       />
 
       {/* Scrollable cards area */}

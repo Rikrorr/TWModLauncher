@@ -12,6 +12,8 @@ import { createLogger } from "../lib/logger";
 interface Props {
   mods: ModInfo[];
   saving: boolean;
+  refreshing?: boolean;
+  onRefresh?: () => void;
   onSelectMod: (key: string) => void;
   onSaveSelectionAsCollection: () => void;
   onSettingsSaved: (key: string, settings: Record<string, unknown>) => void;
@@ -23,6 +25,8 @@ const log = createLogger("ModsPage");
 export default function ModsPage({
   mods,
   saving,
+  refreshing,
+  onRefresh,
   onSelectMod,
   onSaveSelectionAsCollection,
   onSettingsSaved,
@@ -82,6 +86,18 @@ export default function ModsPage({
         <span className="text-xs text-slate-500">
           共 {mods.length} 个 · 启动器读取到的全部 Mod
         </span>
+        <div className="flex-1" />
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={refreshing}
+            className="text-xs px-2.5 py-1 border border-slate-600 hover:border-slate-400
+                       text-slate-400 rounded transition-colors cursor-pointer shrink-0
+                       disabled:opacity-50"
+          >
+            {refreshing ? "刷新中..." : "刷新"}
+          </button>
+        )}
       </div>
 
       <div className={`flex-1 flex flex-col overflow-hidden ${selectedMod ? "hidden" : ""}`}>
@@ -89,6 +105,7 @@ export default function ModsPage({
           saving={saving}
           onSelectMod={onSelectMod}
           onSaveSelectionAsCollection={onSaveSelectionAsCollection}
+          readOnly
           modMenu={{
             schemes: profiles,
             collections,

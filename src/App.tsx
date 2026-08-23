@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { open, ask } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -38,10 +38,8 @@ function App() {
   const setDetecting = useAppStore((s) => s.setDetecting);
   const setError = useAppStore((s) => s.setError);
   const clearPath = useAppStore((s) => s.clearPath);
-  const lastMessage = useAppStore((s) => s.lastMessage);
   const setLastMessage = useAppStore((s) => s.setLastMessage);
   const templateRaw = useAppStore((s) => s.templateRaw);
-  const isDirty = useAppStore((s) => s.isDirty);
   const setDirty = useAppStore((s) => s.setDirty);
 
   const clearMods = useModStore((s) => s.clearMods);
@@ -58,8 +56,6 @@ function App() {
   }, []);
 
   const [gameRunning, setGameRunning] = useState(false);
-  const [hoverButton, setHoverButton] = useState(false);
-  const [hoverKill, setHoverKill] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -72,7 +68,6 @@ function App() {
   const [currentPage, setCurrentPage] = useState<PageKey>(() =>
     useAppStore.getState().gamePath ? "launch" : "settings",
   );
-  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-load cached game path on startup
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -208,16 +203,6 @@ function App() {
     } catch (e) {
       setLaunchError(`停止失败: ${String(e)}`);
     }
-  };
-
-  const enterHover = () => {
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-    setHoverButton(true);
-  };
-  const leaveHover = () => {
-    hoverTimerRef.current = setTimeout(() => {
-      setHoverButton(false);
-    }, 200);
   };
 
   const handleSelectFolder = async () => {
@@ -551,117 +536,13 @@ function App() {
   );
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-slate-100">
-      {/* Title Bar — merged with toolbar items */}
-      <header className="flex items-center gap-3 px-6 py-2.5 border-b border-slate-700 bg-slate-800 shrink-0">
-        {gamePath && (
-          <>
-            {/* Left group: path info */}
-            <span className="text-green-400 text-xs font-medium shrink-0">游戏目录已确认</span>
-            <span className="text-[11px] font-mono text-slate-400 truncate max-w-60 min-w-0">
-              {gamePath}
-            </span>
-            <button
-              onClick={handleReselect}
-              className="text-xs px-2.5 py-1 border border-slate-600 hover:border-slate-400
-                         text-slate-400 rounded transition-colors cursor-pointer shrink-0"
-            >
-              重新选择
-            </button>
-
-            {/* Spacer */}
-            <div className="flex-1 min-w-0" />
-
-            {/* Right group: global actions only (refresh/sync/message/launch) */}
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="text-xs px-2.5 py-1 border border-slate-600 hover:border-slate-400
-                         text-slate-400 rounded transition-colors cursor-pointer shrink-0
-                         disabled:opacity-50"
-            >
-              {refreshing ? "刷新中..." : "刷新"}
-            </button>
-            {saving ? (
-              <span className="text-xs px-2.5 py-1 border border-blue-500/50 bg-blue-500/10
-                               text-blue-400 rounded shrink-0">
-                保存中...
-              </span>
-            ) : (
-              <button
-                onClick={handleSaveAll}
-                className={`text-xs px-2.5 py-1 border rounded transition-all cursor-pointer shrink-0 ${
-                  isDirty
-                    ? "border-amber-500 bg-amber-500/20 text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.5)] hover:border-amber-400 hover:bg-amber-500/30"
-                    : "border-slate-600 hover:border-slate-400 text-slate-400"
-                }`}
-              >
-                同步
-              </button>
-            )}
-            {isDirty && !saving && (
-              <span className="text-xs text-amber-400 animate-pulse shrink-0">未保存</span>
-            )}
-            {lastMessage && (
-              <span className="text-xs text-slate-500 truncate max-w-40 shrink">
-                {lastMessage}
-              </span>
-            )}
-            {/* Launch / Kill button — global */}
-            <div
-              className="relative shrink-0"
-              onMouseEnter={enterHover}
-              onMouseLeave={leaveHover}
-            >
-              {!gameRunning ? (
-                hoverButton ? (
-                  <div className="flex items-stretch">
-                    <button
-                      onClick={handleLaunch}
-                      className="text-xs px-3 py-1 rounded-l bg-green-600 hover:bg-green-500
-                                 text-white font-medium transition-colors cursor-pointer"
-                    >
-                      本地启动
-                    </button>
-                    <div className="w-px bg-green-700" />
-                    <button
-                      onClick={handleLaunchSteam}
-                      className="text-xs px-3 py-1 rounded-r bg-blue-600 hover:bg-blue-500
-                                 text-white font-medium transition-colors cursor-pointer"
-                    >
-                      Steam 启动
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={handleLaunch}
-                    className="text-xs px-4 py-1 rounded bg-green-600 hover:bg-green-500
-                               text-white font-medium transition-colors cursor-pointer"
-                  >
-                    启动游戏
-                  </button>
-                )
-              ) : (
-                <button
-                  onClick={handleKill}
-                  onMouseEnter={() => setHoverKill(true)}
-                  onMouseLeave={() => setHoverKill(false)}
-                  className={`text-xs px-4 py-1 rounded font-medium transition-colors cursor-pointer ${
-                    hoverKill
-                      ? "bg-red-600 hover:bg-red-500 text-white"
-                      : "bg-amber-600 text-white"
-                  }`}
-                >
-                  {hoverKill ? "停止游戏" : "游戏运行中"}
-                </button>
-              )}
-            </div>
-          </>
-        )}
-      </header>
-
       {/* Body: Sidebar + active page */}
       <div className="flex-1 flex overflow-hidden min-h-0">
-        <Sidebar current={currentPage} onNavigate={setCurrentPage} />
+        <Sidebar
+          current={currentPage}
+          onNavigate={setCurrentPage}
+          disabledKeys={gamePath ? undefined : ["schemes", "collections", "mods"]}
+        />
 
         <main className="flex-1 overflow-hidden flex flex-col min-w-0">
           {!gamePath ? (
@@ -740,6 +621,8 @@ function App() {
                 <ModsPage
                   mods={mods}
                   saving={saving}
+                  refreshing={refreshing}
+                  onRefresh={() => void handleRefresh()}
                   onSelectMod={handleSelectMod}
                   onSaveSelectionAsCollection={handleSaveSelectionAsCollection}
                   onSettingsSaved={() => {}}
@@ -752,6 +635,7 @@ function App() {
                   onPathSelected={(path) => {
                     setGamePath(path, "manual");
                   }}
+                  onReselect={handleReselect}
                 />
               )}
 

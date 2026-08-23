@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import Fuse from "fuse.js";
 import type { ModInfo } from "../../lib/types";
-import { useCategoryStore } from "../../store/useCategoryStore";
 import { useModListState, type CategoryKey } from "../ModList/useModListState";
+import { getUserTags } from "../../utils/userTags";
 import ModFilterBar from "../ModList/ModFilterBar";
 import ModCard from "../ModList/ModCard";
 import type { ConflictGroup } from "../../hooks/useConflictDetection";
@@ -41,7 +41,6 @@ export default function MemberModList({
   emptyAction,
 }: Props) {
   const filter = useModListState(mods);
-  const userCategories = useCategoryStore((s) => s.categories);
 
   // ── Filtered mods (same pipeline as ModList) ────────────────────────────
   const fuse = useMemo(
@@ -62,17 +61,14 @@ export default function MemberModList({
     if (filter.activeTags.size > 0) {
       result =
         filter.tagMode === "or"
-          ? result.filter((m) => m.tagList.some((t) => filter.activeTags.has(t)))
-          : result.filter((m) => [...filter.activeTags].every((t) => m.tagList.includes(t)));
-    }
-
-    if (filter.activeCatIds.size > 0) {
-      const catState = useCategoryStore.getState();
-      result = result.filter((m) => {
-        const key = `${m.source}_${m.fileId}`;
-        const cats = new Set(catState.modCats[key] ?? []);
-        return [...filter.activeCatIds].every((cid) => cats.has(cid));
-      });
+          ? result.filter((m) => {
+              const combined = [...m.tagList, ...getUserTags(m)];
+              return combined.some((t) => filter.activeTags.has(t));
+            })
+          : result.filter((m) => {
+              const combined = [...new Set([...m.tagList, ...getUserTags(m)])];
+              return [...filter.activeTags].every((t) => combined.includes(t));
+            });
     }
 
     if (filter.enabledFilter === "enabled") result = result.filter((m) => m.enabled);
@@ -87,7 +83,7 @@ export default function MemberModList({
     });
 
     return result;
-  }, [mods, filter.search, filter.enabledFilter, fuse, filter.activeCategories, filter.activeTags, filter.tagMode, filter.displayOrder, filter.activeCatIds]);
+  }, [mods, filter.search, filter.enabledFilter, fuse, filter.activeCategories, filter.activeTags, filter.tagMode, filter.displayOrder]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-w-0">
@@ -124,23 +120,11 @@ export default function MemberModList({
         onToggleTagDropdown={() => filter.setTagDropdownOpen((v) => !v)}
         tagDropdownRef={filter.tagDropdownRef}
         allTags={filter.allTags}
+        allUserTags={filter.allUserTags}
         viewMode={filter.viewMode}
         onToggleViewMode={() => filter.setViewMode((v) => (v === "detailed" ? "compact" : "detailed"))}
         onApplyOrder={() => {}}
         onGroupCreateMouseDown={() => {}}
-        allUserCategories={userCategories}
-        activeCatIds={filter.activeCatIds}
-        onToggleCatId={(catId) =>
-          filter.setActiveCatIds((prev) => {
-            const next = new Set(prev);
-            if (next.has(catId)) next.delete(catId);
-            else next.add(catId);
-            return next;
-          })
-        }
-        catFilterDropdownOpen={filter.catFilterDropdownOpen}
-        onToggleCatFilterDropdown={() => filter.setCatFilterDropdownOpen((v) => !v)}
-        catFilterDropdownRef={filter.catFilterDropdownRef}
       />
 
       {/* Member cards */}

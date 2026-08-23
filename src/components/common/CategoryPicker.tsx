@@ -67,7 +67,7 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
     >
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-medium text-slate-200 truncate pr-2" title={title}>
-          分类: {title}
+          标签: {title}
         </span>
         <div className="flex items-center gap-1 shrink-0">
           <button
@@ -92,7 +92,7 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-          placeholder="新建分类名..."
+          placeholder="新建标签名..."
           className="flex-1 text-xs px-2 py-1 bg-slate-700 border border-slate-600 rounded
                      text-slate-200 outline-none focus:border-blue-500"
         />
@@ -107,7 +107,7 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
       {/* Category list */}
       <div className="max-h-48 overflow-y-auto space-y-1">
         {categories.length === 0 ? (
-          <p className="text-xs text-slate-500 text-center py-3">暂无分类，先在上方新建</p>
+          <p className="text-xs text-slate-500 text-center py-3">暂无自定义标签，先在上方新建</p>
         ) : (
           categories.map((c) => {
             const checked = current.includes(c.id);

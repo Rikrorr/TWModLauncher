@@ -27,7 +27,9 @@ export default function CollectionsPage({
   const collections = useCollectionStore((s) => s.collections);
   const create = useCollectionStore((s) => s.create);
   const remove = useCollectionStore((s) => s.remove);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // ★ v3: edit selection lifted to global store (persisted across page switches)
+  const selectedId = useAppStore((s) => s.collectionEditId);
+  const setSelectedId = useAppStore((s) => s.setCollectionEditId);
   const [addOpen, setAddOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number; y: number; key: string; mod: ModInfo;
@@ -52,7 +54,7 @@ export default function CollectionsPage({
     setShowNew(true);
     setNewName(col.name);
     onSeedConsumed?.();
-  }, [seed, create, onSeedConsumed]);
+  }, [seed, create, onSeedConsumed, setSelectedId]);
 
   const memberSet = useMemo(() => new Set(selected?.modKeys ?? []), [selected]);
   const memberMods = useMemo(
@@ -166,6 +168,19 @@ export default function CollectionsPage({
 
         {selected && (
           <>
+            <button
+              onClick={() => {
+                try {
+                  localStorage.setItem("twm-mod-collections", JSON.stringify(useCollectionStore.getState().collections));
+                  setLastMessage(`集合 "${selected.name}" 已保存`);
+                } catch {
+                  setLastMessage("保存失败");
+                }
+              }}
+              className="text-xs px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded cursor-pointer"
+            >
+              保存
+            </button>
             <button
               onClick={() => onCreateSchemeFromCollection(selected.id)}
               className="text-xs px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded cursor-pointer"

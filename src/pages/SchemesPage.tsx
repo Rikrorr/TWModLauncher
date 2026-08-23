@@ -23,7 +23,6 @@ const log = createLogger("SchemesPage");
 /** Scheme management page — lifecycle + member editing + conflicts + add-panel. */
 export default function SchemesPage({ mods, onActivate }: Props) {
   const [profiles, setProfiles] = useState<ProfileMeta[]>([]);
-  const [selectedName, setSelectedName] = useState<string | null>(null);
   const [scheme, setScheme] = useState<ProfileData | null>(null);
   const [dirty, setDirty] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -34,6 +33,9 @@ export default function SchemesPage({ mods, onActivate }: Props) {
   } | null>(null);
 
   const activeSchemeName = useAppStore((s) => s.activeSchemeName);
+  // ★ v3: edit selection lifted to global store (persisted across page switches)
+  const selectedName = useAppStore((s) => s.schemeEditName);
+  const setSelectedName = useAppStore((s) => s.setSchemeEditName);
   const collections = useCollectionStore((s) => s.collections);
   const setLastMessage = useAppStore((s) => s.setLastMessage);
 
@@ -171,7 +173,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     } catch (e) {
       setLastMessage(`删除失败: ${String(e)}`);
     }
-  }, [selectedName, refresh, setLastMessage]);
+  }, [selectedName, refresh, setLastMessage, setSelectedName]);
 
   // ModActionMenu actions
   const handleAddToScheme = useCallback(

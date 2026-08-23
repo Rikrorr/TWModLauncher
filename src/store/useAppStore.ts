@@ -33,6 +33,29 @@ function loadInitialGroups(): ModGroup[] {
 
 const initialGroups = loadInitialGroups();
 
+// ★ v3: persist edit selections across sub-page switches within a session
+function loadEditSelections(): { schemeEditName: string | null; collectionEditId: string | null } {
+  try {
+    const raw = localStorage.getItem("twm-edit-selections");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        schemeEditName: typeof parsed.schemeEditName === "string" ? parsed.schemeEditName : null,
+        collectionEditId: typeof parsed.collectionEditId === "string" ? parsed.collectionEditId : null,
+      };
+    }
+  } catch { /* ignore */ }
+  return { schemeEditName: null, collectionEditId: null };
+}
+
+function persistEditSelections(schemeEditName: string | null, collectionEditId: string | null): void {
+  try {
+    localStorage.setItem("twm-edit-selections", JSON.stringify({ schemeEditName, collectionEditId }));
+  } catch { /* ignore */ }
+}
+
+const initialEdits = loadEditSelections();
+
 interface AppState {
   /** Detected game installation path */
   gamePath: string | null;
@@ -56,6 +79,10 @@ interface AppState {
   activeSchemeName: string | null;
   /** ★ v2: Member modKeys of the active scheme (null = no scheme active) */
   activeSchemeModKeys: string[] | null;
+  /** ★ v3: Scheme currently being edited on the Schemes page (persisted) */
+  schemeEditName: string | null;
+  /** ★ v3: Collection currently being edited on the Collections page (persisted) */
+  collectionEditId: string | null;
 
   setGamePath: (path: string, source: "auto" | "manual") => void;
   setDetecting: (v: boolean) => void;
@@ -72,6 +99,10 @@ interface AppState {
   setActiveSchemeName: (name: string | null) => void;
   /** ★ v2: Set the active scheme member modKeys */
   setActiveSchemeModKeys: (keys: string[] | null) => void;
+  /** ★ v3: Set the scheme being edited (persisted) */
+  setSchemeEditName: (name: string | null) => void;
+  /** ★ v3: Set the collection being edited (persisted) */
+  setCollectionEditId: (id: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -86,6 +117,8 @@ export const useAppStore = create<AppState>((set) => ({
   dirtyModSettings: [],
   activeSchemeName: null,
   activeSchemeModKeys: null,
+  schemeEditName: initialEdits.schemeEditName,
+  collectionEditId: initialEdits.collectionEditId,
 
   setGamePath: (path, source) =>
     set({ gamePath: path, pathSource: source, error: null }),
@@ -110,4 +143,14 @@ export const useAppStore = create<AppState>((set) => ({
     })),
   setActiveSchemeName: (name) => set({ activeSchemeName: name }),
   setActiveSchemeModKeys: (keys) => set({ activeSchemeModKeys: keys }),
+  setSchemeEditName: (name) => {
+    set({ schemeEditName: name });
+    const cur = useAppStore.getState();
+    persistEditSelections(name, cur.collectionEditId);
+  },
+  setCollectionEditId: (id) => {
+    set({ collectionEditId: id });
+    const cur = useAppStore.getState();
+    persistEditSelections(cur.schemeEditName, id);
+  },
 }));
