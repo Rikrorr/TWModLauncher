@@ -53,8 +53,19 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
   const setActiveSchemeModKeys = useAppStore((s) => s.setActiveSchemeModKeys);
   // ★ v2: user categories for the filter dropdown
   const userCategories = useCategoryStore((s) => s.categories);
-  // ★ v2: conflict detection (DLL duplicate + setting key repeat)
-  const { conflictMap } = useConflictDetection(mods);
+  // ★ v2: conflict detection within the active scheme member scope (if any).
+  // Empty scope → no conflicts shown (global pool has no conflict semantics).
+  const activeSchemeModKeysForConflict = useAppStore((s) => s.activeSchemeModKeys);
+  const conflictScope = useMemo(() => {
+    if (!activeSchemeModKeysForConflict || activeSchemeModKeysForConflict.length === 0) {
+      return null;
+    }
+    return { modKeys: activeSchemeModKeysForConflict, onlyEnabled: true };
+  }, [activeSchemeModKeysForConflict]);
+  const { conflictMap } = useConflictDetection(
+    mods,
+    conflictScope ?? { modKeys: [], onlyEnabled: true },
+  );
   const modTitles = useMemo(() => {
     const map: Record<string, string> = {};
     for (const m of mods) map[`${m.source}_${m.fileId}`] = m.title;

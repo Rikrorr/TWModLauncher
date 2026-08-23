@@ -9,18 +9,31 @@ export interface ConflictGroup {
   severity: "high" | "suspected";
 }
 
+export interface ConflictScope {
+  /** Participating mod keys. Only these mods are considered (e.g. scheme/collection members). */
+  modKeys: string[];
+  /** When true, only enabled members participate (scheme semantics). Default false. */
+  onlyEnabled?: boolean;
+}
+
 /**
- * Conflict detection for enabled mods:
+ * Conflict detection within a member scope:
  *  1. DLL duplicate — two mods list the same file in BackendPlugins (high confidence)
  *  2. Setting Key duplicate — two mods define the same DefaultSettings key (suspected)
- * Only enabled mods are considered (per active scheme / global state).
+ * Scope determines which mods participate (scheme members, collection members, ...).
  */
-export function useConflictDetection(mods: ModInfo[]): {
-  conflicts: ConflictGroup[];
-  conflictMap: Map<string, ConflictGroup[]>;
-} {
+export function useConflictDetection(
+  mods: ModInfo[],
+  scope: ConflictScope,
+): { conflicts: ConflictGroup[]; conflictMap: Map<string, ConflictGroup[]> } {
   return useMemo(() => {
-    const enabled = mods.filter((m) => m.enabled && !m.isResidual);
+    const memberSet = new Set(scope.modKeys);
+    const participants = mods.filter((m) => {
+      const key = `${m.source}_${m.fileId}`;
+      if (!memberSet.has(key) || m.isResidual) return false;
+      if (scope.onlyEnabled && !m.enabled) return false;
+      return true;
+    });
 
     const conflicts: ConflictGroup[] = [];
     const conflictMap = new Map<string, ConflictGroup[]>();
@@ -35,7 +48,7 @@ export function useConflictDetection(mods: ModInfo[]): {
 
     // 1. DLL duplicates (high confidence)
     const dllIndex = new Map<string, string[]>();
-    for (const m of enabled) {
+    for (const m of participants) {
       for (const dll of m.backendPlugins ?? []) {
         const name = dll.trim();
         if (!name) continue;
@@ -58,7 +71,7 @@ export function useConflictDetection(mods: ModInfo[]): {
 
     // 2. Setting Key duplicates (suspected)
     const keyIndex = new Map<string, string[]>();
-    for (const m of enabled) {
+    for (const m of participants) {
       for (const s of m.defaultSettings ?? []) {
         if (!s.key) continue;
         const list = keyIndex.get(s.key) ?? [];
@@ -79,5 +92,5 @@ export function useConflictDetection(mods: ModInfo[]): {
     }
 
     return { conflicts, conflictMap };
-  }, [mods]);
+  }, [mods, scope.modKeys, scope.onlyEnabled]);
 }
