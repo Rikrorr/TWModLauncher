@@ -23,11 +23,18 @@ interface Props {
   onOpenConfig?: (key: string) => void;
   /** Empty-state extra action (e.g. "添加第一个 Mod"). */
   emptyAction?: React.ReactNode;
+  /** ★ selectable mode (AddModPanel): show checkbox per card. */
+  selectable?: boolean;
+  selectedKeys?: Set<string>;
+  onToggleSelect?: (key: string) => void;
+  /** Keys already in the target container — checkbox disabled. */
+  existingKeys?: Set<string>;
 }
 
 /**
  * Reusable member list — full search/filter/view/card stack shared by
- * SchemesPage and CollectionsPage (same UX as the all-read ModsPage).
+ * SchemesPage, CollectionsPage (same UX as the all-read ModsPage) and
+ * AddModPanel (selectable mode).
  */
 export default function MemberModList({
   mods,
@@ -39,6 +46,10 @@ export default function MemberModList({
   onContextMenu,
   onOpenConfig,
   emptyAction,
+  selectable,
+  selectedKeys,
+  onToggleSelect,
+  existingKeys,
 }: Props) {
   const filter = useModListState(mods);
 
@@ -139,38 +150,62 @@ export default function MemberModList({
         ) : (
           filtered.map((m) => {
             const key = `${m.source}_${m.fileId}`;
+            const inExisting = existingKeys?.has(key) ?? false;
+            const checked = selectedKeys?.has(key) ?? false;
             return (
               <div
                 key={key}
                 onContextMenu={
                   onContextMenu ? (e) => onContextMenu(e, m, key) : undefined
                 }
+                className="flex items-start gap-2"
               >
-                <ModCard
-                  mod={m}
-                  disabled={readOnly}
-                  onToggle={(fileId, enabled) => onToggle?.(fileId, enabled)}
-                  onSelect={() => {}}
-                  onDoubleClick={
-                    onOpenConfig ? () => onOpenConfig(key) : undefined
-                  }
-                  onOrderUp={
-                    readOnly
-                      ? undefined
-                      : () => onOrderChange?.(key, m.order + 1)
-                  }
-                  onOrderDown={
-                    readOnly
-                      ? undefined
-                      : () => onOrderChange?.(key, Math.max(0, m.order - 1))
-                  }
-                  onOrderChange={
-                    readOnly ? undefined : (order) => onOrderChange?.(key, order)
-                  }
-                  conflicts={conflictMap?.get(key)}
-                  modTitles={modTitles}
-                  viewMode={filter.viewMode}
-                />
+                {selectable && (
+                  <label
+                    className={`mt-4 shrink-0 ${
+                      inExisting ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={inExisting ? true : checked}
+                      disabled={inExisting}
+                      onChange={() => onToggleSelect?.(key)}
+                      className="accent-blue-500 w-4 h-4"
+                    />
+                  </label>
+                )}
+                <div className="flex-1 min-w-0">
+                  <ModCard
+                    mod={m}
+                    disabled={readOnly}
+                    onToggle={(fileId, enabled) => onToggle?.(fileId, enabled)}
+                    onSelect={() => {}}
+                    onDoubleClick={
+                      onOpenConfig ? () => onOpenConfig(key) : undefined
+                    }
+                    onOrderUp={
+                      readOnly
+                        ? undefined
+                        : () => onOrderChange?.(key, m.order + 1)
+                    }
+                    onOrderDown={
+                      readOnly
+                        ? undefined
+                        : () => onOrderChange?.(key, Math.max(0, m.order - 1))
+                    }
+                    onOrderChange={
+                      readOnly ? undefined : (order) => onOrderChange?.(key, order)
+                    }
+                    conflicts={conflictMap?.get(key)}
+                    modTitles={modTitles}
+                    viewMode={filter.viewMode}
+                    hideToggleAndOrder={readOnly || selectable}
+                  />
+                </div>
+                {inExisting && (
+                  <span className="text-[10px] text-slate-600 shrink-0 mt-4">已在其中</span>
+                )}
               </div>
             );
           })

@@ -31,6 +31,8 @@ interface Props {
   conflicts?: ConflictGroup[];
   /** ★ v2: modKey → title map for conflict dialog (optional, falls back to keys) */
   modTitles?: Record<string, string>;
+  /** ★ hide toggle & order controls (browse-only list, e.g. ModsPage). */
+  hideToggleAndOrder?: boolean;
 }
 
 const INTERACTIVE_SELECTOR = "button, input, label, select, [data-no-drag]";
@@ -54,6 +56,7 @@ export default function ModCard({
   viewMode = "detailed",
   conflicts,
   modTitles,
+  hideToggleAndOrder,
 }: Props) {
   const [localOrder, setLocalOrder] = useState(mod.order);
   // ★ v2: category/note popups + store reads
@@ -195,7 +198,9 @@ export default function ModCard({
           <span className="text-[10px] text-slate-500 shrink-0">{mod.updatedAt}</span>
         )}
 
-        {/* 8. Order controls */}
+        {/* 8+9. Order controls + Toggle — hidden in browse-only mode */}
+        {!hideToggleAndOrder && (
+          <>
         <div
           className="flex items-center gap-0.5 shrink-0"
           onClick={(e) => e.stopPropagation()}
@@ -270,6 +275,8 @@ export default function ModCard({
           />
           <div className="w-9 h-5 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
         </label>
+          </>
+        )}
       </div>
     );
   }
@@ -468,6 +475,8 @@ export default function ModCard({
 
       {/* Right sidebar: toggle / order / actions */}
       <div className="flex flex-col items-center gap-3 shrink-0">
+        {!hideToggleAndOrder && (
+          <>
         {/* Enable toggle */}
         <label
           onClick={(e) => e.stopPropagation()}
@@ -541,6 +550,8 @@ export default function ModCard({
             ▼
           </button>
         </div>
+          </>
+        )}
 
         {/* Open folder + Workshop link */}
         <div className="flex items-center gap-2">

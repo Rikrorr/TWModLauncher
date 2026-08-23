@@ -933,6 +933,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
                       viewMode={filter.viewMode}
                       conflicts={conflictMap.get(item.key)}
                       modTitles={modTitles}
+                      hideToggleAndOrder={readOnly}
                     />
                   </div>
                 </div>
