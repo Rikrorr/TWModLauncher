@@ -12,7 +12,6 @@ import {
   writeSettingsFile,
   loadConfig,
   saveConfig,
-  openLogDir,
   saveProfile,
 } from "./lib/tauriApi";
 import { collectModSettingsData, patchModSettingsLua, generateModSettingsLua, generateSettingsLua } from "./utils/generateModSettings";
@@ -22,12 +21,14 @@ import { useCategoryStore } from "./store/useCategoryStore";
 import { useNoteStore } from "./store/useNoteStore";
 import { useModScanner } from "./hooks/useModScanner";
 import { useCollectionStore } from "./store/useCollectionStore";
-import type { ProfileData } from "./lib/types";
-import ModList from "./components/ModList/ModList";
-import SettingsEditor from "./components/SettingsEditor/SettingsEditor";
-import ProfileManager from "./components/ProfileManager/ProfileManager";
-import SchemeSelector from "./components/ProfileManager/SchemeSelector";
-import CollectionPanel from "./components/Collection/CollectionPanel";
+import type { PageKey, ProfileData } from "./lib/types";
+import Sidebar from "./components/Sidebar";
+import LaunchPage from "./pages/LaunchPage";
+import SchemesPage from "./pages/SchemesPage";
+import CollectionsPage from "./pages/CollectionsPage";
+import ModsPage from "./pages/ModsPage";
+import SettingsPage from "./pages/SettingsPage";
+import LogsPage from "./pages/LogsPage";
 
 function App() {
   const gamePath = useAppStore((s) => s.gamePath);
@@ -42,14 +43,11 @@ function App() {
   const templateRaw = useAppStore((s) => s.templateRaw);
   const isDirty = useAppStore((s) => s.isDirty);
   const setDirty = useAppStore((s) => s.setDirty);
-  const addDirtyModSetting = useAppStore((s) => s.addDirtyModSetting);
 
   const clearMods = useModStore((s) => s.clearMods);
-  const selectedModKey = useModStore((s) => s.selectedModKey);
   const selectMod = useModStore((s) => s.selectMod);
   const mods = useModStore((s) => s.mods);
   const setMods = useModStore((s) => s.setMods);
-  const updateModSettings = useModStore((s) => s.updateModSettings);
   const { scan, rescan } = useModScanner();
 
   // ★ v2: hydrate global category/note/collection stores on startup
@@ -65,12 +63,15 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [collectionOpen, setCollectionOpen] = useState(false);
-  const [collectionCreateSeed, setCollectionCreateSeed] = useState<{ modKeys: string[]; modMeta: Record<string, import("./lib/types").ModMeta> } | null>(null);
-  // ★ v2: scheme manager panel controlled open state (SchemeSelector opens it)
-  const [managerOpen, setManagerOpen] = useState(false);
-  // ★ v2: pending new-scheme name passed to manager (SchemeSelector "+ 新建方案")
-  const [pendingNewScheme, setPendingNewScheme] = useState<{ name: string } | null>(null);
+  // ★ v3: cross-page collection creation seed (from ModsPage multi-select)
+  const [collectionSeed, setCollectionSeed] = useState<{
+    modKeys: string[];
+    modMeta: Record<string, import("./lib/types").ModMeta>;
+  } | null>(null);
+  // ★ v3: current sub-page (sidebar navigation)
+  const [currentPage, setCurrentPage] = useState<PageKey>(() =>
+    useAppStore.getState().gamePath ? "launch" : "settings",
+  );
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-load cached game path on startup
@@ -472,12 +473,6 @@ function App() {
     selectMod(key);
   }, [handleSaveAll, selectMod]);
 
-  // ★ v2: SchemeSelector "+ 新建方案" — open manager in create mode
-  const handleOpenManagerCreate = useCallback(() => {
-    setPendingNewScheme({ name: "" });
-    setManagerOpen(true);
-  }, []);
-
   // ★ v2: save the current multi-selection as an offline collection
   const handleSaveSelectionAsCollection = useCallback(() => {
     const selected = useModStore.getState().selectedModKeys;
@@ -495,11 +490,11 @@ function App() {
       if (m.version) meta.version = m.version;
       modMeta[key] = meta;
     }
-    setCollectionCreateSeed({
+    setCollectionSeed({
       modKeys: selectedMods.map((m) => `${m.source}_${m.fileId}`),
       modMeta,
     });
-    setCollectionOpen(true);
+    setCurrentPage("collections");
   }, []);
 
   // ★ v2: build a new scheme (profile) from a collection
@@ -530,8 +525,8 @@ function App() {
         ],
         modMeta: col.modMeta,
       };
-      setCollectionOpen(false);
       handleProfileLoad(data);
+      setCurrentPage("schemes");
       setLastMessage(`已从集合 "${col.name}" 创建方案，请确认后保存`);
       // Auto-save the new scheme
       const catStore = useCategoryStore.getState();
@@ -554,13 +549,6 @@ function App() {
     },
     [handleProfileLoad, setLastMessage],
   );
-
-  const selectedMod = selectedModKey
-    ? mods.find(
-        (m) => `${m.source}_${m.fileId}` === selectedModKey
-      ) ?? null
-    : null;
-
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-slate-100">
       {/* Title Bar — merged with toolbar items */}
@@ -569,7 +557,7 @@ function App() {
           <>
             {/* Left group: path info */}
             <span className="text-green-400 text-xs font-medium shrink-0">游戏目录已确认</span>
-            <span className="text-[11px] font-mono text-slate-400 truncate max-w-80 min-w-0">
+            <span className="text-[11px] font-mono text-slate-400 truncate max-w-60 min-w-0">
               {gamePath}
             </span>
             <button
@@ -583,7 +571,7 @@ function App() {
             {/* Spacer */}
             <div className="flex-1 min-w-0" />
 
-            {/* Right group: actions + launch */}
+            {/* Right group: global actions only (refresh/sync/message/launch) */}
             <button
               onClick={handleRefresh}
               disabled={refreshing}
@@ -592,40 +580,6 @@ function App() {
                          disabled:opacity-50"
             >
               {refreshing ? "刷新中..." : "刷新"}
-            </button>
-            <button
-              onClick={() => setCollectionOpen(true)}
-              title="管理离线 Mod 集合"
-              className="text-xs px-2.5 py-1 border border-slate-600 hover:border-slate-400
-                         text-slate-400 rounded transition-colors cursor-pointer shrink-0"
-            >
-              集合
-            </button>
-            {/* ★ v2: scheme switcher — high-frequency activate/switch, separate from editing */}
-            <SchemeSelector
-              mods={mods}
-              onActivate={handleProfileLoad}
-              onOpenManager={() => {
-                setPendingNewScheme(null);
-                setManagerOpen(true);
-              }}
-              onCreateScheme={handleOpenManagerCreate}
-            />
-            <ProfileManager
-              gamePath={gamePath}
-              mods={mods}
-              onLoad={handleProfileLoad}
-              open={managerOpen}
-              onOpenChange={setManagerOpen}
-              createSignal={pendingNewScheme}
-            />
-            <button
-              onClick={() => openLogDir().catch(() => {})}
-              title="打开日志目录"
-              className="text-xs px-2.5 py-1 border border-slate-600 hover:border-slate-400
-                         text-slate-400 rounded transition-colors cursor-pointer shrink-0"
-            >
-              日志
             </button>
             {saving ? (
               <span className="text-xs px-2.5 py-1 border border-blue-500/50 bg-blue-500/10
@@ -648,11 +602,11 @@ function App() {
               <span className="text-xs text-amber-400 animate-pulse shrink-0">未保存</span>
             )}
             {lastMessage && (
-              <span className="text-xs text-slate-500 truncate max-w-48 shrink">
+              <span className="text-xs text-slate-500 truncate max-w-40 shrink">
                 {lastMessage}
               </span>
             )}
-            {/* Launch / Kill button */}
+            {/* Launch / Kill button — global */}
             <div
               className="relative shrink-0"
               onMouseEnter={enterHover}
@@ -705,92 +659,108 @@ function App() {
         )}
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-hidden flex flex-col">
-        {!gamePath ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
-            {!configLoaded ? (
-              <p className="text-sm text-slate-500">加载配置中...</p>
-            ) : (
-              <div className="flex flex-col items-center gap-5">
-                <div className="text-center">
-                  <p className="text-xl font-medium text-slate-200 mb-1">
-                    欢迎使用太吾Mod启动器
-                  </p>
-                  <p className="text-sm text-slate-400">
-                    请先选择《太吾绘卷》的游戏根目录
-                  </p>
+      {/* Body: Sidebar + active page */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        <Sidebar current={currentPage} onNavigate={setCurrentPage} />
+
+        <main className="flex-1 overflow-hidden flex flex-col min-w-0">
+          {!gamePath ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
+              {!configLoaded ? (
+                <p className="text-sm text-slate-500">加载配置中...</p>
+              ) : (
+                <div className="flex flex-col items-center gap-5">
+                  <div className="text-center">
+                    <p className="text-xl font-medium text-slate-200 mb-1">
+                      欢迎使用太吾Mod启动器
+                    </p>
+                    <p className="text-sm text-slate-400">
+                      请先选择《太吾绘卷》的游戏根目录
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={handleSelectFolder}
+                    disabled={detecting}
+                    className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800
+                               text-white rounded-lg font-medium transition-colors cursor-pointer
+                               min-w-56 mt-2"
+                  >
+                    {detecting ? "验证中..." : "选择游戏目录"}
+                  </button>
+
+                  {error && (
+                    <p className="text-sm text-red-400 max-w-md text-center mt-1">
+                      {error}
+                    </p>
+                  )}
                 </div>
-
-                <button
-                  onClick={handleSelectFolder}
-                  disabled={detecting}
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800
-                             text-white rounded-lg font-medium transition-colors cursor-pointer
-                             min-w-56 mt-2"
-                >
-                  {detecting ? "验证中..." : "选择游戏目录"}
-                </button>
-
-                {error && (
-                  <p className="text-sm text-red-400 max-w-md text-center mt-1">
-                    {error}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            {launchError && (
-              <div className="px-6 py-2 bg-red-900/40 border-b border-red-800 text-xs text-red-300 shrink-0">
-                {launchError}
-              </div>
-            )}
-
-            {/* Mod list — kept mounted to preserve scroll position */}
-            <div
-              className={`flex-1 flex flex-col overflow-hidden ${
-                selectedMod ? "hidden" : ""
-              }`}
-            >
-              <ModList
-                saving={saving}
-                onSelectMod={handleSelectMod}
-                onSaveSelectionAsCollection={handleSaveSelectionAsCollection}
-              />
+              )}
             </div>
+          ) : (
+            <>
+              {launchError && (
+                <div className="px-6 py-2 bg-red-900/40 border-b border-red-800 text-xs text-red-300 shrink-0">
+                  {launchError}
+                </div>
+              )}
 
-            {/* ★ v2: collection panel — full-screen overlay (sub-page mode) */}
-            {collectionOpen && (
-              <CollectionPanel
-                mods={mods}
-                onClose={() => {
-                  setCollectionOpen(false);
-                  setCollectionCreateSeed(null);
-                }}
-                onCreateSchemeFromCollection={handleCreateSchemeFromCollection}
-                seed={collectionCreateSeed}
-              />
-            )}
+              {/* Active sub-page */}
+              {currentPage === "launch" && (
+                <LaunchPage
+                  mods={mods}
+                  gamePath={gamePath}
+                  gameRunning={gameRunning}
+                  launchError={launchError}
+                  onActivateScheme={handleProfileLoad}
+                  onLaunchLocal={handleLaunch}
+                  onLaunchSteam={handleLaunchSteam}
+                  onKill={handleKill}
+                  onGoSettings={() => setCurrentPage("settings")}
+                />
+              )}
 
-            {/* Settings editor — overlaid when a mod is selected */}
-            {selectedMod && (
-              <div className="flex-1 flex flex-col overflow-hidden">
-                <SettingsEditor
-                  mod={selectedMod}
-                  onClose={() => selectMod(null)}
-                  onSettingsSaved={(settings) => {
-                    updateModSettings(selectedModKey!, settings);
-                    addDirtyModSetting(selectedModKey!);
-                    setDirty(true);
+              {currentPage === "schemes" && (
+                <SchemesPage
+                  gamePath={gamePath}
+                  mods={mods}
+                  onActivate={handleProfileLoad}
+                />
+              )}
+
+              {currentPage === "collections" && (
+                <CollectionsPage
+                  mods={mods}
+                  onCreateSchemeFromCollection={handleCreateSchemeFromCollection}
+                  seed={collectionSeed}
+                  onSeedConsumed={() => setCollectionSeed(null)}
+                />
+              )}
+
+              {currentPage === "mods" && (
+                <ModsPage
+                  mods={mods}
+                  saving={saving}
+                  onSelectMod={handleSelectMod}
+                  onSaveSelectionAsCollection={handleSaveSelectionAsCollection}
+                  onSettingsSaved={() => {}}
+                />
+              )}
+
+              {currentPage === "settings" && (
+                <SettingsPage
+                  gamePath={gamePath}
+                  onPathSelected={(path) => {
+                    setGamePath(path, "manual");
                   }}
                 />
-              </div>
-            )}
-          </>
-        )}
-      </main>
+              )}
+
+              {currentPage === "logs" && <LogsPage />}
+            </>
+          )}
+        </main>
+      </div>
 
       {/* Status Bar */}
       <footer className="flex items-center px-4 py-1.5 border-t border-slate-700 bg-slate-800 shrink-0 text-xs text-slate-500">

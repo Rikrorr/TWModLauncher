@@ -148,6 +148,17 @@ impl<S: tracing::Subscriber> Layer<S> for ErrorTrigger {
 static TRIGGER: std::sync::LazyLock<Mutex<Option<RingWriter>>> =
     std::sync::LazyLock::new(|| Mutex::new(None));
 
+/// Read the current ring-buffer log content as text.
+/// Used by the frontend log viewer page.
+pub fn read_ring_buffer() -> String {
+    let guard = TRIGGER.lock().unwrap();
+    if let Some(ref w) = *guard {
+        let inner = w.0.lock().unwrap();
+        return String::from_utf8_lossy(&inner.buf).into_owned();
+    }
+    String::new()
+}
+
 // ── Public API ─────────────────────────────────────────
 
 /// Initialize logging.

@@ -130,3 +130,8 @@ export async function openWorkshopUrl(fileId: number): Promise<void> {
 export async function openLogDir(): Promise<void> {
   return invoke("open_log_dir");
 }
+
+/** Read the in-memory ring-buffer log content (last ~300 lines) */
+export async function readLogs(): Promise<string> {
+  return invoke<string>("read_logs");
+}

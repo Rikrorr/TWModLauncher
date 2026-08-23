@@ -27,3 +27,9 @@ pub fn open_log_dir() -> Result<(), String> {
         .map_err(|e| format!("打开日志目录失败: {e}"))?;
     Ok(())
 }
+
+/// Return the current in-memory ring-buffer log content (last ~300 lines).
+#[tauri::command]
+pub fn read_logs() -> String {
+    crate::logging::read_ring_buffer()
+}

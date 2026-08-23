@@ -48,6 +48,7 @@ pub fn run() {
             commands::file_io::open_in_explorer,
             commands::logging::log_event,
             commands::logging::open_log_dir,
+            commands::logging::read_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

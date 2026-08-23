@@ -4,6 +4,15 @@ export interface GamePathResult {
   source: "auto" | "manual" | "none";
 }
 
+/** Sub-page navigation keys (sidebar). */
+export type PageKey =
+  | "launch"
+  | "schemes"
+  | "collections"
+  | "mods"
+  | "settings"
+  | "logs";
+
 /** Raw entry returned by Rust scan_mods command */
 export interface ModScanEntry {
   file_id: string;
