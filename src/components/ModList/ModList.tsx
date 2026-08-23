@@ -13,6 +13,7 @@ import GroupContextMenu from "./GroupContextMenu";
 import MultiContextMenu from "./MultiContextMenu";
 import CategoryPicker from "../common/CategoryPicker";
 import NoteEditor from "../common/NoteEditor";
+import ModActionMenu from "../common/ModActionMenu";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { openInExplorer, openSteamWorkshop } from "../../lib/tauriApi";
 import { useModListState, type CategoryKey } from "./useModListState";
@@ -34,9 +35,18 @@ interface Props {
   onSelectMod: (key: string) => void;
   /** ★ v2: save current multi-selection as an offline collection */
   onSaveSelectionAsCollection?: () => void;
+  /** ★ v3: when provided, mod context menu uses ModActionMenu (加入/新建 two-level) */
+  modMenu?: {
+    schemes: { name: string; modCount?: number }[];
+    collections: { id: string; name: string }[];
+    onAddToScheme: (schemeName: string, modKeys: string[]) => void;
+    onAddToCollection: (collectionId: string, modKeys: string[]) => void;
+    onCreateScheme: () => void;
+    onCreateCollection: () => void;
+  };
 }
 
-export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollection }: Props) {
+export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollection, modMenu }: Props) {
   // ── Store ────────────────────────────────────────────────────────────────
   const mods = useModStore((s) => s.mods);
   const scanning = useModStore((s) => s.scanning);
@@ -1016,7 +1026,41 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       </div>
 
       {/* ── Context Menus (portalled to body) ──────────────────────────────── */}
-      {contextMenu?.type === "mod" && (() => {
+      {contextMenu?.type === "mod" && modMenu && (() => {
+        const mod = mods.find((m) => `${m.source}_${m.fileId}` === contextMenu.key);
+        if (!mod) return null;
+        const menuMod = {
+          key: contextMenu.key,
+          fileId: mod.fileId,
+          source: mod.source,
+          dirPath: mod.dirPath,
+          enabled: mod.enabled,
+        };
+        return (
+          <ModActionMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            onClose={() => setContextMenu(null)}
+            modTitle={mod.title}
+            mod={menuMod}
+            schemes={modMenu.schemes}
+            collections={modMenu.collections}
+            containerKind="mods"
+            onToggle={(enabled) => handleToggle(mod.fileId, enabled)}
+            onOpenConfig={() => onSelectMod(contextMenu.key)}
+            onAddToScheme={(name) => modMenu.onAddToScheme(name, [contextMenu.key])}
+            onAddToCollection={(id) => modMenu.onAddToCollection(id, [contextMenu.key])}
+            onCreateScheme={modMenu.onCreateScheme}
+            onCreateCollection={modMenu.onCreateCollection}
+            onSetCategories={() => setModPopup({ modKey: contextMenu.key, kind: "category" })}
+            onEditNote={() => setModPopup({ modKey: contextMenu.key, kind: "note" })}
+            onOpenExplorer={() => openInExplorer(mod.dirPath).catch((e) => setLastMessage(String(e)))}
+            onOpenWorkshop={() => openSteamWorkshop(mod.fileId).catch((e) => setLastMessage(String(e)))}
+          />
+        );
+      })()}
+
+      {contextMenu?.type === "mod" && !modMenu && (() => {
         const mod = mods.find((m) => `${m.source}_${m.fileId}` === contextMenu.key);
         if (!mod) return null;
         return (

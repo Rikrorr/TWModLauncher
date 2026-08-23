@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import type { ProfileMeta, ModCollection } from "../../lib/types";
 import ContextMenu from "../ModList/ContextMenu";
 
 interface Props {
@@ -18,10 +17,10 @@ interface Props {
   };
   /** Multi-select context */
   modCount?: number;
-  /** Available schemes for "add to scheme" */
-  schemes: ProfileMeta[];
-  /** Available collections for "add to collection" */
-  collections: ModCollection[];
+  /** Available schemes for "add to scheme" (duck-typed: name + optional modCount) */
+  schemes: { name: string; modCount?: number }[];
+  /** Available collections for "add to collection" (duck-typed: id + name) */
+  collections: { id: string; name: string }[];
   /** Whether the current container is a scheme (show enable/order/remove) or collection (no enable) */
   containerKind?: "mods" | "scheme" | "collection";
   /** Actions */

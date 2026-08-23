@@ -13,6 +13,8 @@ interface CollectionState {
     enabledMods?: string[];
     modMeta: Record<string, ModMeta>;
   }) => ModCollection;
+  /** ★ v3: add mod keys to an existing collection (dedup). Returns true if changed. */
+  addModsToCollection: (id: string, modKeys: string[], modMeta: Record<string, ModMeta>) => boolean;
   remove: (id: string) => void;
   /** Import a collection JSON string. Returns { ok } or { ok:false, error }. */
   importJson: (
@@ -68,6 +70,24 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   remove: (id) => {
     set((s) => ({ collections: s.collections.filter((c) => c.id !== id) }));
     persist(get());
+  },
+
+  addModsToCollection: (id, modKeys, modMeta) => {
+    let changed = false;
+    set((s) => ({
+      collections: s.collections.map((c) => {
+        if (c.id !== id) return c;
+        const next = [...new Set([...c.modKeys, ...modKeys])];
+        const nextMeta = { ...c.modMeta, ...modMeta };
+        if (next.length === c.modKeys.length && Object.keys(nextMeta).length === Object.keys(c.modMeta).length) {
+          return c;
+        }
+        changed = true;
+        return { ...c, modKeys: next, modMeta: nextMeta, updatedAt: new Date().toISOString() };
+      }),
+    }));
+    persist(get());
+    return changed;
   },
 
   importJson: (raw) => {

@@ -722,7 +722,6 @@ function App() {
 
               {currentPage === "schemes" && (
                 <SchemesPage
-                  gamePath={gamePath}
                   mods={mods}
                   onActivate={handleProfileLoad}
                 />
