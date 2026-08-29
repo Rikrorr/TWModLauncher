@@ -45,6 +45,9 @@ interface UseCardDragParams {
   modGroupMapRef: React.MutableRefObject<Map<string, string>>;
   handleMoveToGroup: (modKey: string, groupId: string | null) => void;
   refs: DragRefs;
+  /** ★ controlled: selection source (defaults to global mod store). */
+  selectedModKeys?: string[];
+  clearSelection?: () => void;
 }
 
 export function useCardDrag({
@@ -54,6 +57,8 @@ export function useCardDrag({
   modGroupMapRef,
   handleMoveToGroup,
   refs,
+  selectedModKeys: controlledSelected,
+  clearSelection: controlledClear,
 }: UseCardDragParams) {
   const [dragState, setDragState] = useState<CardDragState | null>(null);
   const dragStateRef = useRef(dragState);
@@ -88,9 +93,9 @@ export function useCardDrag({
       // the selection — the drag signals "I want to work with THIS card".
       // Skip when modifier keys are held: the click handler will handle
       // Shift/Ctrl/Meta selection — clearing here would nuke lastClickedKey.
-      const storeSelection = useModStore.getState().selectedModKeys;
+      const storeSelection = controlledSelected ?? useModStore.getState().selectedModKeys;
       if (!storeSelection.includes(key) && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-        useModStore.getState().clearSelection();
+        (controlledClear ?? (() => useModStore.getState().clearSelection()))();
       }
 
       let multiDrag = false;
@@ -402,7 +407,7 @@ export function useCardDrag({
 
         // Clear multi-selection after drag
         if (isMulti) {
-          useModStore.getState().clearSelection();
+          (controlledClear ?? (() => useModStore.getState().clearSelection()))();
         }
 
         dragOverGroupRef.current = null;

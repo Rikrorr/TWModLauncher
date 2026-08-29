@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCollectionStore } from "../store/useCollectionStore";
 import { useAppStore } from "../store/useAppStore";
-import { useConflictDetection } from "../hooks/useConflictDetection";
 import { loadScheme, addModsToScheme, saveScheme, buildModMeta, buildModSettings } from "../utils/schemeMembers";
-import type { ModInfo, ModMeta } from "../lib/types";
+import type { ModGroup, ModInfo, ModMeta } from "../lib/types";
+import ModList from "../components/ModList/ModList";
 import ModActionMenu from "../components/common/ModActionMenu";
 import AddModPanel from "../components/common/AddModPanel";
 import ContainerSelect from "../components/common/ContainerSelect";
 import CreateDialog from "../components/common/CreateDialog";
 import SettingsEditor from "../components/SettingsEditor/SettingsEditor";
-import MemberModList from "../components/ModList/MemberModList";
 
 interface Props {
   mods: ModInfo[];
@@ -48,6 +47,58 @@ export default function CollectionsPage({
   const seedHandledRef = useRef(false);
 
   const selected = collections.find((c) => c.id === selectedId) ?? null;
+
+  // ★ v3: container-local multi-select (isolated from the global read-mods selection)
+  const [selectedModKeys, setSelectedModKeys] = useState<string[]>([]);
+  const setLastClickedKey = useCallback((_k: string | null) => { /* ModList owns the anchor */ }, []);
+  const selectModOnly = useCallback((key: string) => {
+    setSelectedModKeys([key]);
+    setLastClickedKey(key);
+  }, [setLastClickedKey]);
+  const toggleSelectMod = useCallback((key: string) => {
+    setSelectedModKeys((prev) => {
+      const exists = prev.includes(key);
+      return exists ? prev.filter((k) => k !== key) : [...prev, key];
+    });
+    setLastClickedKey(key);
+  }, [setLastClickedKey]);
+  const addModsToSelection = useCallback((keys: string[]) => {
+    setSelectedModKeys((prev) => [...new Set([...prev, ...keys])]);
+    if (keys.length > 0) setLastClickedKey(keys[keys.length - 1]);
+  }, [setLastClickedKey]);
+  const clearSelection = useCallback(() => {
+    setSelectedModKeys([]);
+    setLastClickedKey(null);
+  }, [setLastClickedKey]);
+
+  // ★ v3: session-local groups/displayOrder derived from the selected collection
+  const [sessionGroups, setSessionGroups] = useState<ModGroup[]>([]);
+  const [sessionDisplayOrder, setSessionDisplayOrder] = useState<string[]>([]);
+  useEffect(() => {
+    if (!selected) {
+      setSessionGroups([]);
+      setSessionDisplayOrder([]);
+      return;
+    }
+    // Build ModGroup[] from the collection's preset groups (stable ids) + members
+    const groups: ModGroup[] = (selected.groups ?? []).map((g, i) => ({
+      id: `cg-${selected.id.slice(0, 8)}-${i}`,
+      name: g.name,
+      collapsed: false,
+      modKeys: g.modKeys.filter((k) => selected.modKeys.includes(k)),
+    }));
+    const grouped = new Set(groups.flatMap((g) => g.modKeys));
+    const order: string[] = [
+      ...groups.map((g) => g.id),
+      ...selected.modKeys.filter((k) => !grouped.has(k)),
+    ];
+    setSessionGroups(groups);
+    setSessionDisplayOrder(order);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  const setGroups = useCallback((groups: ModGroup[]) => setSessionGroups(groups), []);
+  const setDisplayOrder = useCallback((order: string[]) => setSessionDisplayOrder(order), []);
 
   // Seed → auto-create a collection from the passed mod keys (once)
   useEffect(() => {
@@ -102,17 +153,6 @@ export default function CollectionsPage({
     },
     [selected],
   );
-
-  // Conflict detection within the selected collection's member scope
-  const { conflictMap } = useConflictDetection(
-    mods,
-    { modKeys: selected?.modKeys ?? [], onlyEnabled: false },
-  );
-  const modTitles = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const m of mods) map[`${m.source}_${m.fileId}`] = m.title;
-    return map;
-  }, [mods]);
 
   const handleRemoveMember = useCallback(
     (key: string) => {
@@ -198,32 +238,48 @@ export default function CollectionsPage({
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        {/* Member list — reused filter/view/card stack (read-only) */}
         {!selected ? (
           <div className="flex-1 flex items-center justify-center">
             <p className="text-sm text-slate-500">从上方选择一个集合查看成员</p>
           </div>
         ) : (
-          <MemberModList
-            mods={memberMods}
-            conflictMap={conflictMap}
-            modTitles={modTitles}
-            readOnly
-            allowOrder
-            onOrderChange={handleOrderChange}
-            onOpenConfig={(key) => setConfigModKey(key)}
-            onContextMenu={(e, mod, key) => {
-              e.preventDefault();
-              setContextMenu({ x: e.clientX, y: e.clientY, key, mod });
+          <ModList
+            saving={false}
+            onSelectMod={(key) => setConfigModKey(key)}
+            controlled={{
+              mods: memberMods,
+              groups: sessionGroups,
+              displayOrder: sessionDisplayOrder,
+              setGroups,
+              setDisplayOrder,
+              toggleMod: () => {}, // collections have no enable/disable semantics
+              setModOrder: (key, order) => handleOrderChange(key, order),
+              clearSelection,
+              selectedModKeys,
+              selectModOnly,
+              toggleSelectMod,
+              addModsToSelection,
             }}
-            emptyAction={
-              <button
-                onClick={() => setAddOpen(true)}
-                className="text-xs px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded cursor-pointer"
-              >
-                ＋ 添加第一个 Mod
-              </button>
-            }
+            modMenu={{
+              schemes: [],
+              collections,
+              onAddToScheme: (name, keys) =>
+                void (async () => {
+                  const target = await loadScheme(name);
+                  if (target) {
+                    const next = addModsToScheme(target, keys, buildModMeta(mods, keys), buildModSettings(mods, keys));
+                    await saveScheme(next);
+                    setLastMessage(`已加入方案 "${name}"`);
+                  }
+                })(),
+              onAddToCollection: (id, keys) => {
+                useCollectionStore.getState().addModsToCollection(id, keys, buildModMeta(mods, keys), buildModSettings(mods, keys));
+                setLastMessage("已加入集合");
+              },
+              onCreateScheme: () => setLastMessage("请到方案页创建新方案"),
+              onCreateCollection: () => setCreateOpen(true),
+            }}
+            onSaveSelectionAsCollection={() => {}}
           />
         )}
       </div>

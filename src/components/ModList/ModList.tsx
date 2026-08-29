@@ -47,26 +47,76 @@ interface Props {
     onCreateScheme: () => void;
     onCreateCollection: () => void;
   };
+  /**
+   * ★ v3: controlled data source — binds the list to container data
+   * (scheme/collection) instead of the global stores. When provided, the
+   * dual-view (active-scheme pool) is skipped and all mutations flow through
+   * the controller callbacks.
+   */
+  controlled?: {
+    mods: ModInfo[];
+    groups: ModGroup[];
+    displayOrder: string[];
+    setGroups: (groups: ModGroup[]) => void;
+    setDisplayOrder: (order: string[]) => void;
+    toggleMod: (fileId: number, enabled: boolean) => void;
+    setModOrder: (key: string, order: number) => void;
+    clearSelection: () => void;
+    selectedModKeys: string[];
+    selectModOnly: (key: string) => void;
+    toggleSelectMod: (key: string) => void;
+    addModsToSelection: (keys: string[]) => void;
+  };
 }
 
-export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollection, modMenu, readOnly }: Props) {
-  // ── Store ────────────────────────────────────────────────────────────────
-  const mods = useModStore((s) => s.mods);
-  const scanning = useModStore((s) => s.scanning);
-  const error = useModStore((s) => s.error);
-  const toggleMod = useModStore((s) => s.toggleMod);
-  const setModOrder = useModStore((s) => s.setModOrder);
+export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollection, modMenu, readOnly, controlled }: Props) {
+  // ── Data source: global stores (always called unconditionally) or controlled
+  //    container (scheme/collection). Hooks must be unconditional — values are
+  //    overridden below when controlled.
+  const storeMods = useModStore((s) => s.mods);
+  const storeScanning = useModStore((s) => s.scanning);
+  const storeError = useModStore((s) => s.error);
+  const storeToggleMod = useModStore((s) => s.toggleMod);
+  const storeSetModOrder = useModStore((s) => s.setModOrder);
   const setLastMessage = useAppStore((s) => s.setLastMessage);
   const setDirty = useAppStore((s) => s.setDirty);
-  const groups = useAppStore((s) => s.groups);
-  const setGroups = useAppStore((s) => s.setGroups);
-  // ★ v2: active scheme member whitelist for dual-view (members + pool)
-  const activeSchemeName = useAppStore((s) => s.activeSchemeName);
-  const activeSchemeModKeys = useAppStore((s) => s.activeSchemeModKeys);
-  const setActiveSchemeModKeys = useAppStore((s) => s.setActiveSchemeModKeys);
+  const storeGroups = useAppStore((s) => s.groups);
+  const storeSetGroups = useAppStore((s) => s.setGroups);
+  const storeActiveSchemeName = useAppStore((s) => s.activeSchemeName);
+  const storeActiveSchemeModKeys = useAppStore((s) => s.activeSchemeModKeys);
+  const storeSetActiveSchemeModKeys = useAppStore((s) => s.setActiveSchemeModKeys);
+  const storeSelectedModKeys = useModStore((s) => s.selectedModKeys);
+  const storeLastClickedKey = useModStore((s) => s.lastClickedKey);
+  const storeSelectModOnly = useModStore((s) => s.selectModOnly);
+  const storeToggleSelectMod = useModStore((s) => s.toggleSelectMod);
+  const storeAddModsToSelection = useModStore((s) => s.addModsToSelection);
+  const storeClearSelection = useModStore((s) => s.clearSelection);
+
+  // Controlled overrides (scheme/collection container data)
+  const mods = controlled?.mods ?? storeMods;
+  const scanning = controlled ? false : storeScanning;
+  const error = controlled ? null : storeError;
+  const toggleMod = controlled?.toggleMod ?? storeToggleMod;
+  const setModOrder = controlled?.setModOrder ?? storeSetModOrder;
+  const groups = controlled?.groups ?? storeGroups;
+  // Normalize setGroups to accept either a value or an updater function
+  const setGroups = controlled
+    ? (updater: ModGroup[] | ((prev: ModGroup[]) => ModGroup[])) => {
+        const next =
+          typeof updater === "function" ? updater(controlled.groups) : updater;
+        controlled.setGroups(next);
+      }
+    : storeSetGroups;
+  // ★ v2: active scheme member whitelist for dual-view (members + pool).
+  // Controlled mode (scheme/collection) has no pool concept — disabled.
+  const activeSchemeName = controlled ? null : storeActiveSchemeName;
+  const activeSchemeModKeys = controlled ? null : storeActiveSchemeModKeys;
+  const setActiveSchemeModKeys = controlled ? undefined : storeSetActiveSchemeModKeys;
   // ★ v2: conflict detection within the active scheme member scope (if any).
-  // Empty scope → no conflicts shown (global pool has no conflict semantics).
-  const activeSchemeModKeysForConflict = useAppStore((s) => s.activeSchemeModKeys);
+  // Controlled mode: detect across the whole controlled member list.
+  const activeSchemeModKeysForConflict = controlled
+    ? controlled.mods.map((m) => `${m.source}_${m.fileId}`)
+    : storeActiveSchemeModKeys;
   const conflictScope = useMemo(() => {
     if (!activeSchemeModKeysForConflict || activeSchemeModKeysForConflict.length === 0) {
       return null;
@@ -83,17 +133,27 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     return map;
   }, [mods]);
 
-  // ── Multi-select ──────────────────────────────────────────────────────────
-  const selectedModKeys = useModStore((s) => s.selectedModKeys);
-  const lastClickedKey = useModStore((s) => s.lastClickedKey);
-  const selectModOnly = useModStore((s) => s.selectModOnly);
-  const toggleSelectMod = useModStore((s) => s.toggleSelectMod);
-  const addModsToSelection = useModStore((s) => s.addModsToSelection);
-  const clearSelection = useModStore((s) => s.clearSelection);
+  // ── Multi-select: controlled or global store ──────────────────────────────
+  const selectedModKeys = controlled?.selectedModKeys ?? storeSelectedModKeys;
+  const lastClickedKey = controlled ? null : storeLastClickedKey;
+  const selectModOnly = controlled?.selectModOnly ?? storeSelectModOnly;
+  const toggleSelectMod = controlled?.toggleSelectMod ?? storeToggleSelectMod;
+  const addModsToSelection = controlled?.addModsToSelection ?? storeAddModsToSelection;
+  const clearSelection = controlled?.clearSelection ?? storeClearSelection;
   const selectionCount = selectedModKeys.length;
 
   // ── Filter / search state ────────────────────────────────────────────────
   const filter = useModListState(mods);
+
+  // ★ v3: displayOrder — controlled (container) or global filter state.
+  const displayOrder = controlled?.displayOrder ?? filter.displayOrder;
+  const setDisplayOrder: (updater: string[] | ((prev: string[]) => string[])) => void = controlled
+    ? (updater) => {
+        const next =
+          typeof updater === "function" ? updater(controlled.displayOrder) : updater;
+        controlled.setDisplayOrder(next);
+      }
+    : filter.setDisplayOrder;
 
   // ── Group helpers ────────────────────────────────────────────────────────
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
@@ -120,9 +180,9 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       );
       if (!confirmed) return;
       setGroups((prev) => prev.filter((g) => g.id !== groupId));
-      filter.setDisplayOrder((prev) => prev.filter((id) => id !== groupId));
+      setDisplayOrder((prev) => prev.filter((id) => id !== groupId));
     },
-    [setGroups, filter.setDisplayOrder, groups],
+    [setGroups, setDisplayOrder, groups],
   );
 
   const handleToggleGroup = useCallback(
@@ -204,7 +264,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       });
       // Insert group ID into displayOrder right before the mod key.
       // The mod key stays — buildRenderItems skips it when the group renders.
-      filter.setDisplayOrder((prev) => {
+      setDisplayOrder((prev) => {
         const modIdx = prev.indexOf(modKey);
         if (modIdx === -1) return [...prev, newGroup.id];
         const next = [...prev];
@@ -214,7 +274,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       // Trigger rename for the new group
       setTimeout(() => setEditingGroupId(newGroup.id), 0);
     },
-    [setGroups, filter.setDisplayOrder],
+    [setGroups, setDisplayOrder],
   );
 
   const handleUngroup = useCallback(
@@ -232,14 +292,14 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       }
       // Remove the empty group
       setGroups((prev) => prev.filter((g) => g.id !== groupId));
-      filter.setDisplayOrder((prev) => prev.filter((id) => id !== groupId));
+      setDisplayOrder((prev) => prev.filter((id) => id !== groupId));
     },
-    [groups, handleMoveToGroup, setGroups, filter.setDisplayOrder],
+    [groups, handleMoveToGroup, setGroups, setDisplayOrder],
   );
 
   // ── Batch mod operations (for multi-select context menu) ──────────────────
   const handleBatchToggleMods = useCallback(() => {
-    const currentMods = useModStore.getState().mods;
+    const currentMods = mods;
     const selectedSet = new Set(selectedModKeys);
     const selected = currentMods.filter((m) => selectedSet.has(`${m.source}_${m.fileId}`));
     const allEnabled = selected.every((m) => m.enabled);
@@ -260,7 +320,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
   );
 
   const handleBatchOrderUp = useCallback(() => {
-    filter.setDisplayOrder((prev) => {
+    setDisplayOrder((prev) => {
       const next = [...prev];
       const selectedSet = new Set(selectedModKeys);
       // Move each selected mod up, skipping other selected mods
@@ -277,10 +337,10 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       return next;
     });
     setDirty(true);
-  }, [selectedModKeys, filter.setDisplayOrder, setDirty]);
+  }, [selectedModKeys, setDisplayOrder, setDirty]);
 
   const handleBatchOrderDown = useCallback(() => {
-    filter.setDisplayOrder((prev) => {
+    setDisplayOrder((prev) => {
       const next = [...prev];
       const selectedSet = new Set(selectedModKeys);
       // Move each selected mod down, skipping other selected mods
@@ -297,7 +357,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       return next;
     });
     setDirty(true);
-  }, [selectedModKeys, filter.setDisplayOrder, setDirty]);
+  }, [selectedModKeys, setDisplayOrder, setDirty]);
 
   // modKey → group lookup
   const modGroupMap = useMemo(() => {
@@ -318,8 +378,8 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     return counts;
   }, [modGroupMap]);
 
-  const displayOrderRef = useRef(filter.displayOrder);
-  useLayoutEffect(() => { displayOrderRef.current = filter.displayOrder; });
+  const displayOrderRef = useRef(displayOrder);
+  useLayoutEffect(() => { displayOrderRef.current = displayOrder; });
 
   // ── Reactive cross-group dedup: guarantee no modKey appears in multiple
   //    groups. This is a safety net — in normal operation it should never fire.
@@ -327,7 +387,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
   //    lowest displayOrder index (i.e. the "first" group visually).
   useEffect(() => {
     const keyOwner = new Map<string, string>();
-    const groupPriority = new Map(filter.displayOrder.map((id, i) => [id, i]));
+    const groupPriority = new Map(displayOrder.map((id, i) => [id, i]));
     const hasDupes = groups.some((g) =>
       g.modKeys.some((mk) => {
         const existing = keyOwner.get(mk);
@@ -367,7 +427,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
         modKeys: g.modKeys.filter((mk) => keyOwner.get(mk) === g.id),
       })),
     );
-  }, [groups, filter.displayOrder, setGroups]);
+  }, [groups, displayOrder, setGroups]);
 
   // ── Persist prefs ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -379,13 +439,13 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
           tagMode: filter.tagMode,
           viewMode: filter.viewMode,
           groups,
-          displayOrder: filter.displayOrder,
+          displayOrder: displayOrder,
         }),
       );
     } catch {
       /* ignore */
     }
-  }, [filter.activeCategories, filter.tagMode, filter.viewMode, groups, filter.displayOrder]);
+  }, [filter.activeCategories, filter.tagMode, filter.viewMode, groups, displayOrder]);
 
   const handleOrderChange = useCallback(
     (key: string, order: number) => {
@@ -405,7 +465,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
   );
 
   const handleApplyOrder = useCallback(() => {
-    const currentMods = useModStore.getState().mods;
+    const currentMods = mods;
     const keyModMap = new Map(currentMods.map((m) => [`${m.source}_${m.fileId}`, m]));
     const updates: [string, number][] = [];
 
@@ -414,7 +474,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
 
     // Walk displayOrder — group IDs and mod keys are interleaved.
     // Group IDs are UUIDs (no underscore); mod keys are "${source}_${fileId}".
-    for (const key of filter.displayOrder) {
+    for (const key of displayOrder) {
       // Check if this key is a group ID
       const group = groups.find((g) => g.id === key);
       if (group) {
@@ -424,8 +484,8 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
         const sorted = group.modKeys
           .filter((mk) => keyModMap.has(mk))
           .sort((a, b) => {
-            const ai = filter.displayOrder.indexOf(a);
-            const bi = filter.displayOrder.indexOf(b);
+            const ai = displayOrder.indexOf(a);
+            const bi = displayOrder.indexOf(b);
             // Items not in displayOrder go last
             return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi);
           });
@@ -452,7 +512,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     for (const [key, order] of updates) setModOrder(key, order);
     setDirty(true);
     setLastMessage(`已应用加载顺序 — ${updates.length} 个已启用 Mod 从 0 递增`);
-  }, [filter.displayOrder, groups, modGroupMap, setModOrder, setDirty, setLastMessage]);
+  }, [displayOrder, groups, modGroupMap, setModOrder, setDirty, setLastMessage]);
 
   // ── Drag refs (shared across all drag systems) ────────────────────────────
   const dragRefs: DragRefs = useMemo(() => createDragRefs(), []);
@@ -466,31 +526,35 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     lineIndented,
     handleDragMouseDown,
   } = useCardDrag({
-    displayOrder: filter.displayOrder,
-    setDisplayOrder: filter.setDisplayOrder,
+    displayOrder,
+    setDisplayOrder,
     groups,
     modGroupMapRef,
     handleMoveToGroup,
     refs: dragRefs,
+    selectedModKeys: controlled?.selectedModKeys,
+    clearSelection: controlled?.clearSelection,
   });
 
   const {
     groupHeaderDragState,
     handleGroupHeaderDragMouseDown,
   } = useGroupHeaderDrag({
-    displayOrder: filter.displayOrder,
-    setDisplayOrder: filter.setDisplayOrder,
+    displayOrder,
+    setDisplayOrder,
     groups,
     refs: dragRefs,
+    clearSelection: controlled?.clearSelection,
   });
 
   const { groupCreateState, handleGroupCreateMouseDown } = useGroupCreateDrag({
     setGroups,
-    setDisplayOrder: filter.setDisplayOrder,
+    setDisplayOrder,
     setEditingGroupId,
     modGroupMapRef,
     groups,
     refs: dragRefs,
+    clearSelection: controlled?.clearSelection,
   });
 
   // ── Toggle handler ───────────────────────────────────────────────────────
@@ -499,7 +563,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       // ★ v3: read-only browse mode — no toggling
       if (readOnly) return;
       // ★ v2: scheme-outside mods are read-only — cannot be toggled
-      const key = `${useModStore.getState().mods.find((m) => m.fileId === fileId)?.source ?? 0}_${fileId}`;
+      const key = `${mods.find((m) => m.fileId === fileId)?.source ?? 0}_${fileId}`;
       const memberSet = activeSchemeModKeys ? new Set(activeSchemeModKeys) : null;
       if (memberSet && !memberSet.has(key)) {
         setLastMessage("该 Mod 未加入当前方案，请在方案内添加后再启用");
@@ -548,7 +612,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
           toggleSelectMod(key);
         }
       } else if (e.shiftKey && lastClickedKey) {
-        const disp = filter.displayOrder;
+        const disp = displayOrder;
         const from = disp.indexOf(lastClickedKey);
         const to = disp.indexOf(key);
         if (from !== -1 && to !== -1) {
@@ -599,7 +663,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       }
     },
     [preventClickRef, toggleSelectMod, lastClickedKey, saveEditAndExit,
-     filter.displayOrder, groups, addModsToSelection, clearSelection, selectModOnly],
+     displayOrder, groups, addModsToSelection, clearSelection, selectModOnly],
   );
 
   const handleModDoubleClick = useCallback(
@@ -662,15 +726,15 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     else if (filter.enabledFilter === "disabled") result = result.filter((m) => !m.enabled);
 
     result.sort((a, b) => {
-      const idxA = filter.displayOrder.indexOf(`${a.source}_${a.fileId}`);
-      const idxB = filter.displayOrder.indexOf(`${b.source}_${b.fileId}`);
+      const idxA = displayOrder.indexOf(`${a.source}_${a.fileId}`);
+      const idxB = displayOrder.indexOf(`${b.source}_${b.fileId}`);
       const rankA = idxA === -1 ? Infinity : idxA;
       const rankB = idxB === -1 ? Infinity : idxB;
       return rankA - rankB || a.title.localeCompare(b.title, "zh");
     });
 
     return result;
-  }, [mods, filter.search, filter.enabledFilter, fuse, filter.activeCategories, filter.activeTags, filter.tagMode, filter.displayOrder, filter.activeCatIds]);
+  }, [mods, filter.search, filter.enabledFilter, fuse, filter.activeCategories, filter.activeTags, filter.tagMode, displayOrder, filter.activeCatIds]);
 
   // ★ v2: split filtered mods into scheme members + pool (dual-view).
   // Without an active scheme, everything is a "member" (legacy global mode).
@@ -741,7 +805,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
 
   // ── Render items ─────────────────────────────────────────────────────────
   const renderItems = buildRenderItems(
-    filter.displayOrder,
+    displayOrder,
     groups,
     schemeFiltered,
     modGroupMap,
@@ -753,10 +817,10 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
   const sourceGroupId =
     dragState?.sourceKey ? (modGroupMap.get(dragState.sourceKey) ?? null) : null;
   const cardInsertLineIdx = computeCardInsertLineIdx(
-    dragState, filter.displayOrder, renderItems, sourceGroupId,
+    dragState, displayOrder, renderItems, sourceGroupId,
   );
   const ghds = groupHeaderDragState;
-  const groupInsertLineIdx = computeGroupInsertLineIdx(ghds, filter.displayOrder, renderItems);
+  const groupInsertLineIdx = computeGroupInsertLineIdx(ghds, displayOrder, renderItems);
   const groupDragCardInsertLineIdx = computeGroupDragCardInsertLineIdx(ghds, renderItems);
 
   // Card-drag insertion line indentation: indented (ml-6) when
@@ -1007,7 +1071,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
                                 // Add to scheme: enable mod + join member set
                                 toggleMod(m.fileId, true);
                                 setDirty(true);
-                                setActiveSchemeModKeys([...(activeSchemeModKeys ?? []), key]);
+                                setActiveSchemeModKeys?.([...(activeSchemeModKeys ?? []), key]);
                               }}
                               className="text-[10px] px-2 py-0.5 bg-blue-600 hover:bg-blue-500
                                          text-white rounded cursor-pointer shrink-0"

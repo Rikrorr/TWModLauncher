@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { listProfiles, deleteProfile, saveProfile } from "../lib/tauriApi";
 import { useAppStore } from "../store/useAppStore";
 import { useCollectionStore } from "../store/useCollectionStore";
-import { useConflictDetection } from "../hooks/useConflictDetection";
 import {
   loadScheme,
   saveScheme,
@@ -20,7 +19,7 @@ import ModActionMenu from "../components/common/ModActionMenu";
 import AddModPanel from "../components/common/AddModPanel";
 import ContainerSelect from "../components/common/ContainerSelect";
 import CreateDialog from "../components/common/CreateDialog";
-import ContainerModList from "../components/ModList/ContainerModList";
+import ModList from "../components/ModList/ModList";
 import SettingsEditor from "../components/SettingsEditor/SettingsEditor";
 import MissingModsDialog from "../components/ProfileManager/MissingModsDialog";
 import { createLogger } from "../lib/logger";
@@ -44,6 +43,29 @@ export default function SchemesPage({ mods, onActivate }: Props) {
   } | null>(null);
   // ★ v3: per-scheme mod config editor (snapshot, not written to disk directly)
   const [configModKey, setConfigModKey] = useState<string | null>(null);
+  // ★ v3: container-local multi-select (isolated from the global read-mods selection)
+  const [selectedModKeys, setSelectedModKeys] = useState<string[]>([]);
+  // Shift-range anchor is kept internally by ModList; we only need the set
+  const setLastClickedKey = useCallback((_k: string | null) => { /* ModList owns the anchor */ }, []);
+  const selectModOnly = useCallback((key: string) => {
+    setSelectedModKeys([key]);
+    setLastClickedKey(key);
+  }, [setLastClickedKey]);
+  const toggleSelectMod = useCallback((key: string) => {
+    setSelectedModKeys((prev) => {
+      const exists = prev.includes(key);
+      return exists ? prev.filter((k) => k !== key) : [...prev, key];
+    });
+    setLastClickedKey(key);
+  }, [setLastClickedKey]);
+  const addModsToSelection = useCallback((keys: string[]) => {
+    setSelectedModKeys((prev) => [...new Set([...prev, ...keys])]);
+    if (keys.length > 0) setLastClickedKey(keys[keys.length - 1]);
+  }, [setLastClickedKey]);
+  const clearSelection = useCallback(() => {
+    setSelectedModKeys([]);
+    setLastClickedKey(null);
+  }, [setLastClickedKey]);
 
   const activeSchemeName = useAppStore((s) => s.activeSchemeName);
   // ★ v3: edit selection lifted to global store (persisted across page switches)
@@ -88,17 +110,6 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     () => mods.filter((m) => memberSet.has(`${m.source}_${m.fileId}`)),
     [mods, memberSet],
   );
-
-  // Conflict detection within the selected scheme's member scope
-  const { conflictMap } = useConflictDetection(
-    mods,
-    { modKeys: scheme?.modKeys ?? [], onlyEnabled: true },
-  );
-  const modTitles = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const m of mods) map[`${m.source}_${m.fileId}`] = m.title;
-    return map;
-  }, [mods]);
 
   // Member display mods — overlay scheme's enabled/order on ModInfo
   const displayMods = useMemo(
@@ -176,58 +187,6 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     setScheme((prev) => {
       if (!prev) return prev;
       const next = { ...prev, displayOrder };
-      void saveScheme(next).catch(() => {});
-      return next;
-    });
-  }, []);
-
-  const handleMoveToGroup = useCallback((modKey: string, groupId: string | null) => {
-    setScheme((prev) => {
-      if (!prev) return prev;
-      const groups = (prev.groups ?? []).map((g) => ({
-        ...g,
-        modKeys: g.modKeys.filter((k) => k !== modKey),
-      }));
-      if (groupId) {
-        const target = groups.find((g) => g.id === groupId);
-        if (target) target.modKeys = [...target.modKeys, modKey];
-      }
-      // Ensure the mod key exists in displayOrder
-      const displayOrder = prev.displayOrder?.includes(modKey)
-        ? prev.displayOrder
-        : [...(prev.displayOrder ?? []), modKey];
-      const next = { ...prev, groups, displayOrder };
-      void saveScheme(next).catch(() => {});
-      return next;
-    });
-  }, []);
-
-  const handleApplyOrder = useCallback(() => {
-    setScheme((prev) => {
-      if (!prev) return prev;
-      // Reassign modOrder 0,1,2... following displayOrder (enabled mods only)
-      const modOrder: Record<string, number> = {};
-      let nextOrder = 0;
-      const emitted = new Set<string>();
-      for (const key of prev.displayOrder ?? []) {
-        const group = (prev.groups ?? []).find((g) => g.id === key);
-        if (group) {
-          for (const mk of group.modKeys) {
-            if ((prev.enabledMods ?? []).includes(mk) && !emitted.has(mk)) {
-              modOrder[mk] = nextOrder++;
-              emitted.add(mk);
-            }
-          }
-        } else if ((prev.enabledMods ?? []).includes(key) && !emitted.has(key)) {
-          modOrder[key] = nextOrder++;
-          emitted.add(key);
-        }
-      }
-      // Remaining enabled mods not in displayOrder
-      for (const mk of prev.enabledMods ?? []) {
-        if (!emitted.has(mk)) modOrder[mk] = nextOrder++;
-      }
-      const next = { ...prev, modOrder };
       void saveScheme(next).catch(() => {});
       return next;
     });
@@ -465,23 +424,32 @@ export default function SchemesPage({ mods, onActivate }: Props) {
             <p className="text-sm text-slate-500">从上方选择一个方案查看成员</p>
           </div>
         ) : (
-          <ContainerModList
-            mods={displayMods}
-            groups={scheme.groups ?? []}
-            displayOrder={scheme.displayOrder ?? []}
-            conflictMap={conflictMap}
-            modTitles={modTitles}
-            onToggle={(fileId, enabled) => handleToggleMember(fileId, enabled)}
-            onOrderChange={handleOrderChange}
-            onOpenConfig={(key) => setConfigModKey(key)}
-            onContextMenu={(e, mod, key) => {
-              e.preventDefault();
-              setContextMenu({ x: e.clientX, y: e.clientY, key, mod });
+          <ModList
+            saving={false}
+            onSelectMod={(key) => setConfigModKey(key)}
+            controlled={{
+              mods: displayMods,
+              groups: scheme.groups ?? [],
+              displayOrder: scheme.displayOrder ?? [],
+              setGroups: handleGroupsChange,
+              setDisplayOrder: handleDisplayOrderChange,
+              toggleMod: (fileId, enabled) => handleToggleMember(fileId, enabled),
+              setModOrder: (key, order) => handleOrderChange(key, order),
+              clearSelection,
+              selectedModKeys,
+              selectModOnly,
+              toggleSelectMod,
+              addModsToSelection,
             }}
-            onGroupsChange={handleGroupsChange}
-            onDisplayOrderChange={handleDisplayOrderChange}
-            onMoveToGroup={handleMoveToGroup}
-            onApplyOrder={handleApplyOrder}
+            modMenu={{
+              schemes: profiles,
+              collections,
+              onAddToScheme: (name, keys) => void handleAddToScheme(name, keys),
+              onAddToCollection: (id, keys) => handleAddToCollection(id, keys),
+              onCreateScheme: () => setCreateSchemeOpen(true),
+              onCreateCollection: () => setLastMessage("请到集合页新建集合"),
+            }}
+            onSaveSelectionAsCollection={() => {}}
           />
         )}
       </div>

@@ -18,6 +18,8 @@ interface UseGroupCreateDragParams {
   modGroupMapRef: React.MutableRefObject<Map<string, string>>;
   groups: ModGroup[];
   refs: DragRefs;
+  /** ★ controlled: clear-selection source (defaults to global mod store). */
+  clearSelection?: () => void;
 }
 
 export function useGroupCreateDrag({
@@ -27,6 +29,7 @@ export function useGroupCreateDrag({
   modGroupMapRef,
   groups,
   refs,
+  clearSelection: clearSelectionFn,
 }: UseGroupCreateDragParams) {
   const [state, setState] = useState<GroupCreateDragState | null>(null);
   const stateRef = useRef(state);
@@ -36,7 +39,7 @@ export function useGroupCreateDrag({
     (e: React.MouseEvent) => {
       e.preventDefault();
       // Clear multi-selection when dragging to create a new group
-      useModStore.getState().clearSelection();
+      (clearSelectionFn ?? (() => useModStore.getState().clearSelection()))();
       snapshotDragPositions(refs, groups);
       setState({
         active: false,
@@ -45,7 +48,7 @@ export function useGroupCreateDrag({
         insertBefore: null,
       });
     },
-    [refs, groups],
+    [refs, groups, clearSelectionFn],
   );
 
   useEffect(() => {

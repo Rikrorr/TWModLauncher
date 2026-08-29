@@ -17,6 +17,8 @@ interface UseGroupHeaderDragParams {
   setDisplayOrder: React.Dispatch<React.SetStateAction<string[]>>;
   groups: ModGroup[];
   refs: DragRefs;
+  /** ★ controlled: clear-selection source (defaults to global mod store). */
+  clearSelection?: () => void;
 }
 
 export function useGroupHeaderDrag({
@@ -24,6 +26,7 @@ export function useGroupHeaderDrag({
   setDisplayOrder,
   groups,
   refs,
+  clearSelection: clearSelectionFn,
 }: UseGroupHeaderDragParams) {
   const [state, setState] = useState<GroupHeaderDragState | null>(null);
   const stateRef = useRef(state);
@@ -45,7 +48,7 @@ export function useGroupHeaderDrag({
       refs.preventClickRef.current = true;
 
       // Clear multi-selection when dragging a group header
-      useModStore.getState().clearSelection();
+      (clearSelectionFn ?? (() => useModStore.getState().clearSelection()))();
 
       // Snapshot all DOM positions
       snapshotDragPositions(refs, groups, {
