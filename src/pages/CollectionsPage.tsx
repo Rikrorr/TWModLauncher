@@ -2,19 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCollectionStore } from "../store/useCollectionStore";
 import { useAppStore } from "../store/useAppStore";
 import { useConflictDetection } from "../hooks/useConflictDetection";
-import { loadScheme, addModsToScheme, saveScheme, buildModMeta } from "../utils/schemeMembers";
+import { loadScheme, addModsToScheme, saveScheme, buildModMeta, buildModSettings } from "../utils/schemeMembers";
 import type { ModInfo, ModMeta } from "../lib/types";
 import ModActionMenu from "../components/common/ModActionMenu";
 import AddModPanel from "../components/common/AddModPanel";
 import ContainerSelect from "../components/common/ContainerSelect";
 import CreateDialog from "../components/common/CreateDialog";
+import SettingsEditor from "../components/SettingsEditor/SettingsEditor";
 import MemberModList from "../components/ModList/MemberModList";
 
 interface Props {
   mods: ModInfo[];
   onCreateSchemeFromCollection: (collectionId: string) => void;
   /** Cross-page creation seed (from ModsPage multi-select → save as collection). */
-  seed?: { modKeys: string[]; modMeta: Record<string, ModMeta> } | null;
+  seed?: {
+    modKeys: string[];
+    modMeta: Record<string, ModMeta>;
+    modSettings?: Record<string, Record<string, unknown>>;
+  } | null;
   onSeedConsumed?: () => void;
 }
 
@@ -35,6 +40,8 @@ export default function CollectionsPage({
   const [contextMenu, setContextMenu] = useState<{
     x: number; y: number; key: string; mod: ModInfo;
   } | null>(null);
+  // ★ v3: per-collection mod config editor (snapshot → collection.modSettings)
+  const [configModKey, setConfigModKey] = useState<string | null>(null);
   // ★ v3: create-collection modal (replaces inline input)
   const [createOpen, setCreateOpen] = useState(false);
   const setLastMessage = useAppStore((s) => s.setLastMessage);
@@ -50,6 +57,7 @@ export default function CollectionsPage({
       name: `集合 ${new Date().toLocaleDateString("zh-CN")}`,
       modKeys: seed.modKeys,
       modMeta: seed.modMeta,
+      modSettings: seed.modSettings,
     });
     setSelectedId(col.id);
     onSeedConsumed?.();
@@ -57,8 +65,20 @@ export default function CollectionsPage({
 
   const memberSet = useMemo(() => new Set(selected?.modKeys ?? []), [selected]);
   const memberMods = useMemo(
-    () => mods.filter((m) => memberSet.has(`${m.source}_${m.fileId}`)),
-    [mods, memberSet],
+    () =>
+      mods
+        .filter((m) => memberSet.has(`${m.source}_${m.fileId}`))
+        .map((m) => {
+          const key = `${m.source}_${m.fileId}`;
+          // ★ v3: show the collection's settings snapshot (falls back to read-mods base)
+          const snap = selected?.modSettings?.[key];
+          return {
+            ...m,
+            currentSettings:
+              snap && Object.keys(snap).length > 0 ? snap : m.currentSettings,
+          };
+        }),
+    [mods, memberSet, selected],
   );
 
   // Conflict detection within the selected collection's member scope
@@ -180,6 +200,7 @@ export default function CollectionsPage({
             conflictMap={conflictMap}
             modTitles={modTitles}
             readOnly
+            onOpenConfig={(key) => setConfigModKey(key)}
             onContextMenu={(e, mod, key) => {
               e.preventDefault();
               setContextMenu({ x: e.clientX, y: e.clientY, key, mod });
@@ -203,7 +224,12 @@ export default function CollectionsPage({
           existingKeys={memberSet}
           targetLabel={selected.name}
           onAdd={(keys) => {
-            useCollectionStore.getState().addModsToCollection(selected.id, keys, buildModMeta(mods, keys));
+            useCollectionStore.getState().addModsToCollection(
+              selected.id,
+              keys,
+              buildModMeta(mods, keys),
+              buildModSettings(mods, keys),
+            );
             setLastMessage(`已加入集合 "${selected.name}"`);
           }}
           onClose={() => setAddOpen(false)}
@@ -224,17 +250,28 @@ export default function CollectionsPage({
           onAddToScheme={async (name) => {
             const target = await loadScheme(name);
             if (target) {
-              const next = addModsToScheme(target, contextKeys, buildModMeta(mods, contextKeys));
+              const next = addModsToScheme(
+                target,
+                contextKeys,
+                buildModMeta(mods, contextKeys),
+                buildModSettings(mods, contextKeys),
+              );
               await saveScheme(next);
               setLastMessage(`已加入方案 "${name}"`);
             }
           }}
           onAddToCollection={(id) => {
-            useCollectionStore.getState().addModsToCollection(id, contextKeys, buildModMeta(mods, contextKeys));
+            useCollectionStore.getState().addModsToCollection(
+              id,
+              contextKeys,
+              buildModMeta(mods, contextKeys),
+              buildModSettings(mods, contextKeys),
+            );
             setLastMessage("已加入集合");
           }}
           onCreateScheme={() => setLastMessage("请到方案页创建新方案")}
           onCreateCollection={() => setCreateOpen(true)}
+          onOpenConfig={() => setConfigModKey(contextMenu.key)}
           onRemoveFromContainer={() => handleRemoveMember(contextMenu.key)}
         />
       )}
@@ -254,6 +291,41 @@ export default function CollectionsPage({
           onClose={() => setCreateOpen(false)}
         />
       )}
+
+      {/* ★ v3: per-collection mod config editor (snapshot → collection.modSettings) */}
+      {configModKey && selected && (() => {
+        const mod = memberMods.find((m) => `${m.source}_${m.fileId}` === configModKey);
+        if (!mod) return null;
+        return (
+          <div className="fixed inset-0 z-[170] flex items-center justify-center bg-black/60">
+            <div className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl w-[640px] max-w-[95vw] h-[80vh] max-h-[85vh] flex flex-col overflow-hidden">
+              <SettingsEditor
+                mod={mod}
+                onClose={() => setConfigModKey(null)}
+                onSettingsSaved={(settings) => {
+                  const store = useCollectionStore.getState();
+                  const updated = store.collections.map((c) =>
+                    c.id === selected.id
+                      ? {
+                          ...c,
+                          modSettings: {
+                            ...(c.modSettings ?? {}),
+                            [configModKey]: { ...settings },
+                          },
+                          updatedAt: new Date().toISOString(),
+                        }
+                      : c,
+                  );
+                  useCollectionStore.setState({ collections: updated });
+                  try {
+                    localStorage.setItem("twm-mod-collections", JSON.stringify(updated));
+                  } catch { /* ignore */ }
+                }}
+              />
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

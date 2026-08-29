@@ -11,10 +11,16 @@ interface CollectionState {
     modKeys: string[];
     groups?: { name: string; modKeys: string[] }[];
     enabledMods?: string[];
+    modSettings?: Record<string, Record<string, unknown>>;
     modMeta: Record<string, ModMeta>;
   }) => ModCollection;
-  /** ★ v3: add mod keys to an existing collection (dedup). Returns true if changed. */
-  addModsToCollection: (id: string, modKeys: string[], modMeta: Record<string, ModMeta>) => boolean;
+  /** ★ v3: add mod keys (+ optional settings snapshot) to an existing collection (dedup). */
+  addModsToCollection: (
+    id: string,
+    modKeys: string[],
+    modMeta: Record<string, ModMeta>,
+    modSettings?: Record<string, Record<string, unknown>>,
+  ) => boolean;
   remove: (id: string) => void;
   /** Import a collection JSON string. Returns { ok } or { ok:false, error }. */
   importJson: (
@@ -59,6 +65,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       modKeys: [...new Set(c.modKeys)],
       groups: c.groups,
       enabledMods: c.enabledMods,
+      modSettings: c.modSettings,
       modMeta: c.modMeta,
       version: 1,
     };
@@ -72,18 +79,31 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     persist(get());
   },
 
-  addModsToCollection: (id, modKeys, modMeta) => {
+  addModsToCollection: (id, modKeys, modMeta, modSettings) => {
     let changed = false;
     set((s) => ({
       collections: s.collections.map((c) => {
         if (c.id !== id) return c;
         const next = [...new Set([...c.modKeys, ...modKeys])];
         const nextMeta = { ...c.modMeta, ...modMeta };
-        if (next.length === c.modKeys.length && Object.keys(nextMeta).length === Object.keys(c.modMeta).length) {
+        const nextSettings = modSettings
+          ? { ...(c.modSettings ?? {}), ...modSettings }
+          : c.modSettings;
+        if (
+          next.length === c.modKeys.length &&
+          Object.keys(nextMeta).length === Object.keys(c.modMeta).length &&
+          Object.keys(nextSettings ?? {}).length === Object.keys(c.modSettings ?? {}).length
+        ) {
           return c;
         }
         changed = true;
-        return { ...c, modKeys: next, modMeta: nextMeta, updatedAt: new Date().toISOString() };
+        return {
+          ...c,
+          modKeys: next,
+          modMeta: nextMeta,
+          modSettings: nextSettings,
+          updatedAt: new Date().toISOString(),
+        };
       }),
     }));
     persist(get());
@@ -121,6 +141,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       modKeys: [...new Set(col.modKeys)],
       groups: col.groups,
       enabledMods: col.enabledMods,
+      modSettings: col.modSettings,
       modMeta: col.modMeta ?? {},
       version: 1,
     };

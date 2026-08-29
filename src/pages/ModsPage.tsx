@@ -6,7 +6,7 @@ import { useModStore } from "../store/useModStore";
 import { useAppStore } from "../store/useAppStore";
 import { useCollectionStore } from "../store/useCollectionStore";
 import { listProfiles } from "../lib/tauriApi";
-import { loadScheme, addModsToScheme, saveScheme, buildModMeta } from "../utils/schemeMembers";
+import { loadScheme, addModsToScheme, saveScheme, buildModMeta, buildModSettings } from "../utils/schemeMembers";
 import { createLogger } from "../lib/logger";
 
 interface Props {
@@ -63,7 +63,13 @@ export default function ModsPage({
     async (schemeName: string, keys: string[]) => {
       const target = await loadScheme(schemeName);
       if (!target) return;
-      const next = addModsToScheme(target, keys, buildModMeta(mods, keys));
+      // ★ v3: carry the read-mods (base) config snapshot into the scheme
+      const next = addModsToScheme(
+        target,
+        keys,
+        buildModMeta(mods, keys),
+        buildModSettings(mods, keys),
+      );
       await saveScheme(next);
       setLastMessage(`已加入方案 "${schemeName}"`);
       void refreshProfiles();
@@ -73,7 +79,13 @@ export default function ModsPage({
 
   const handleAddToCollection = useCallback(
     (collectionId: string, keys: string[]) => {
-      const changed = addModsToCollection(collectionId, keys, buildModMeta(mods, keys));
+      // ★ v3: carry the read-mods (base) config snapshot into the collection
+      const changed = addModsToCollection(
+        collectionId,
+        keys,
+        buildModMeta(mods, keys),
+        buildModSettings(mods, keys),
+      );
       if (changed) setLastMessage("已加入集合");
     },
     [mods, addModsToCollection, setLastMessage],

@@ -63,6 +63,7 @@ function App() {
   const [collectionSeed, setCollectionSeed] = useState<{
     modKeys: string[];
     modMeta: Record<string, import("./lib/types").ModMeta>;
+    modSettings: Record<string, Record<string, unknown>>;
   } | null>(null);
   // ★ v3: current sub-page (sidebar navigation)
   const [currentPage, setCurrentPage] = useState<PageKey>(() =>
@@ -438,8 +439,29 @@ function App() {
         ? patchModSettingsLua(templateRaw, sd)
         : generateModSettingsLua(sd);
       await writeModSettings(activePath, lua);
+
+      // ★ v3 (q3): apply the scheme's per-mod settings snapshots to disk
+      const schemeSettings = data.modSettings ?? {};
+      let perModFail = 0;
+      for (const [key, values] of Object.entries(schemeSettings)) {
+        if (!values || Object.keys(values).length === 0) continue;
+        const mod = currentMods.find((m) => `${m.source}_${m.fileId}` === key);
+        if (mod && mod.dirPath) {
+          try {
+            const raw = generateSettingsLua(values);
+            await writeSettingsFile(mod.dirPath, raw);
+          } catch {
+            perModFail++;
+          }
+        }
+      }
+
       useAppStore.getState().setDirty(false);
-      setLastMessage(`方案 "${data.name}" 已激活并同步`);
+      setLastMessage(
+        perModFail > 0
+          ? `方案 "${data.name}" 已激活并同步（${perModFail} 个 Mod 配置写入失败）`
+          : `方案 "${data.name}" 已激活并同步`,
+      );
     } catch (e) {
       setLastMessage(`方案 "${data.name}" 激活失败（同步写入错误）: ${String(e)}`);
     }
@@ -475,9 +497,16 @@ function App() {
       if (m.version) meta.version = m.version;
       modMeta[key] = meta;
     }
+    const keys = selectedMods.map((m) => `${m.source}_${m.fileId}`);
     setCollectionSeed({
-      modKeys: selectedMods.map((m) => `${m.source}_${m.fileId}`),
+      modKeys: keys,
       modMeta,
+      // ★ v3: carry the read-mods (base) config snapshot
+      modSettings: Object.fromEntries(
+        selectedMods
+          .filter((m) => Object.keys(m.currentSettings).length > 0)
+          .map((m) => [`${m.source}_${m.fileId}`, { ...m.currentSettings }]),
+      ),
     });
     setCurrentPage("collections");
   }, []);
@@ -502,7 +531,8 @@ function App() {
         modKeys: col.modKeys,
         enabledMods: col.enabledMods ?? [...col.modKeys],
         modOrder: {},
-        modSettings: {},
+        // ★ v3: carry the collection's per-mod settings snapshot into the new scheme
+        modSettings: col.modSettings ?? {},
         groups: groupEntries,
         displayOrder: [
           ...groupEntries.map((g) => g.id),

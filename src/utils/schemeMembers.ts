@@ -13,11 +13,13 @@ export async function loadScheme(name: string): Promise<ProfileData | null> {
   }
 }
 
-/** Add mod keys to a scheme's member whitelist + enabled list (dedup). */
+/** Add mod keys to a scheme's member whitelist + enabled list (dedup).
+ *  Optionally carries a per-mod settings snapshot (from the read-mods base config). */
 export function addModsToScheme(
   data: ProfileData,
   modKeys: string[],
   modMeta: ProfileData["modMeta"],
+  modSettings?: Record<string, Record<string, unknown>>,
 ): ProfileData {
   const memberSet = new Set(data.modKeys ?? []);
   const enabledSet = new Set(data.enabledMods ?? []);
@@ -30,7 +32,26 @@ export function addModsToScheme(
     modKeys: [...memberSet],
     enabledMods: [...enabledSet],
     modMeta: { ...(data.modMeta ?? {}), ...modMeta },
+    modSettings: modSettings
+      ? { ...(data.modSettings ?? {}), ...modSettings }
+      : data.modSettings,
   };
+}
+
+/** Build a per-mod settings snapshot map from the read-mods (disk) current settings. */
+export function buildModSettings(
+  mods: ModInfo[],
+  keys: string[],
+): Record<string, Record<string, unknown>> {
+  const settings: Record<string, Record<string, unknown>> = {};
+  for (const m of mods) {
+    const key = `${m.source}_${m.fileId}`;
+    if (!keys.includes(key)) continue;
+    if (m.currentSettings && Object.keys(m.currentSettings).length > 0) {
+      settings[key] = { ...m.currentSettings };
+    }
+  }
+  return settings;
 }
 
 /** Remove mod keys from a scheme (member + enabled + order + settings + groups). */
@@ -172,11 +193,19 @@ export function mergeCollectionIntoScheme(
     }
   }
 
+  // 4. Merge per-mod settings snapshot (skip conflict mods in partial mode)
+  const mergedSettings = { ...(scheme.modSettings ?? {}) };
+  for (const [k, v] of Object.entries(collection.modSettings ?? {})) {
+    if (skipMods.has(k)) continue;
+    mergedSettings[k] = v;
+  }
+
   return {
     ...scheme,
     modKeys: [...memberSet],
     enabledMods: [...enabledSet],
     modMeta: { ...(scheme.modMeta ?? {}), ...(collection.modMeta ?? {}) },
+    modSettings: mergedSettings,
     groups: newGroups,
   };
 }

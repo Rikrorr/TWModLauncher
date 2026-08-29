@@ -9,6 +9,7 @@ import {
   addModsToScheme,
   removeModsFromScheme,
   buildModMeta,
+  buildModSettings,
   analyzeCollectionMerge,
   mergeCollectionIntoScheme,
   type CollectionMergeConflict,
@@ -19,6 +20,7 @@ import ModActionMenu from "../components/common/ModActionMenu";
 import AddModPanel from "../components/common/AddModPanel";
 import ContainerSelect from "../components/common/ContainerSelect";
 import CreateDialog from "../components/common/CreateDialog";
+import SettingsEditor from "../components/SettingsEditor/SettingsEditor";
 import MemberModList from "../components/ModList/MemberModList";
 import MissingModsDialog from "../components/ProfileManager/MissingModsDialog";
 import { createLogger } from "../lib/logger";
@@ -41,6 +43,8 @@ export default function SchemesPage({ mods, onActivate }: Props) {
   const [contextMenu, setContextMenu] = useState<{
     x: number; y: number; key: string; mod: ModInfo;
   } | null>(null);
+  // ★ v3: per-scheme mod config editor (snapshot, not written to disk directly)
+  const [configModKey, setConfigModKey] = useState<string | null>(null);
 
   const activeSchemeName = useAppStore((s) => s.activeSchemeName);
   // ★ v3: edit selection lifted to global store (persisted across page switches)
@@ -75,6 +79,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
       if (!cancelled && data) {
         setScheme(data);
         setDirty(false);
+        setConfigModKey(null);
       }
     });
     return () => { cancelled = true; };
@@ -106,6 +111,11 @@ export default function SchemesPage({ mods, onActivate }: Props) {
           ...m,
           enabled: (scheme?.enabledMods ?? []).includes(key),
           order: scheme?.modOrder?.[key] ?? 0,
+          // ★ v3: show the scheme's settings snapshot (falls back to read-mods base)
+          currentSettings:
+            (scheme?.modSettings?.[key] && Object.keys(scheme.modSettings[key]).length > 0)
+              ? scheme.modSettings[key]
+              : m.currentSettings,
         };
       }),
     [memberMods, scheme],
@@ -190,7 +200,12 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     async (targetName: string, keys: string[]) => {
       const target = await loadScheme(targetName);
       if (!target) return;
-      const next = addModsToScheme(target, keys, buildModMeta(mods, keys));
+      const next = addModsToScheme(
+        target,
+        keys,
+        buildModMeta(mods, keys),
+        buildModSettings(mods, keys),
+      );
       await saveScheme(next);
       setLastMessage(`已加入方案 "${targetName}"`);
       if (targetName === selectedName) setScheme(next);
@@ -203,7 +218,12 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     (collectionId: string, keys: string[]) => {
       const changed = useCollectionStore
         .getState()
-        .addModsToCollection(collectionId, keys, buildModMeta(mods, keys));
+        .addModsToCollection(
+          collectionId,
+          keys,
+          buildModMeta(mods, keys),
+          buildModSettings(mods, keys),
+        );
       if (changed) setLastMessage("已加入集合");
     },
     [mods, setLastMessage],
@@ -388,6 +408,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
             modTitles={modTitles}
             onToggle={(fileId, enabled) => handleToggleMember(fileId, enabled)}
             onOrderChange={handleOrderChange}
+            onOpenConfig={(key) => setConfigModKey(key)}
             onContextMenu={(e, mod, key) => {
               e.preventDefault();
               setContextMenu({ x: e.clientX, y: e.clientY, key, mod });
@@ -414,12 +435,46 @@ export default function SchemesPage({ mods, onActivate }: Props) {
             setScheme((prev) => {
               if (!prev) return prev;
               setDirty(true);
-              return addModsToScheme(prev, keys, buildModMeta(mods, keys));
+              return addModsToScheme(
+                prev,
+                keys,
+                buildModMeta(mods, keys),
+                buildModSettings(mods, keys),
+              );
             });
           }}
           onClose={() => setAddOpen(false)}
         />
       )}
+
+      {/* ★ v3: per-scheme mod config editor (snapshot → scheme.modSettings, not disk) */}
+      {configModKey && scheme && (() => {
+        const mod = displayMods.find((m) => `${m.source}_${m.fileId}` === configModKey);
+        if (!mod) return null;
+        return (
+          <div className="fixed inset-0 z-[170] flex items-center justify-center bg-black/60">
+            <div className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl w-[640px] max-w-[95vw] h-[80vh] max-h-[85vh] flex flex-col overflow-hidden">
+              <SettingsEditor
+                mod={mod}
+                onClose={() => setConfigModKey(null)}
+                onSettingsSaved={(settings) => {
+                  setScheme((prev) => {
+                    if (!prev) return prev;
+                    setDirty(true);
+                    return {
+                      ...prev,
+                      modSettings: {
+                        ...(prev.modSettings ?? {}),
+                        [configModKey]: { ...settings },
+                      },
+                    };
+                  });
+                }}
+              />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ★ v3: create-scheme modal */}
       {createSchemeOpen && (
@@ -527,6 +582,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
           collections={collections}
           containerKind="scheme"
           onToggle={(enabled) => handleToggleMember(contextMenu.mod.fileId, enabled)}
+          onOpenConfig={() => setConfigModKey(contextMenu.key)}
           onAddToScheme={(name) => void handleAddToScheme(name, contextKeys)}
           onAddToCollection={(id) => handleAddToCollection(id, contextKeys)}
           onCreateScheme={() => {
