@@ -25,6 +25,8 @@ interface Props {
   onToggleViewMode: () => void;
   onApplyOrder: () => void;
   onGroupCreateMouseDown: (e: React.MouseEvent) => void;
+  /** ★ click-based group creation (container lists without drag-to-create). */
+  onGroupCreateClick?: () => void;
   /** ★ hide the "+ 分组" create-group button (read-only browse mode). */
   hideGroupCreate?: boolean;
 }
@@ -53,6 +55,7 @@ export default function ModFilterBar({
   onGroupCreateMouseDown,
   allUserTags,
   hideGroupCreate,
+  onGroupCreateClick,
 }: Props) {
   const enabledLabel =
     enabledFilter === "all" ? "全部" : enabledFilter === "enabled" ? "已启用" : "已禁用";
@@ -264,11 +267,12 @@ export default function ModFilterBar({
         {/* New group — hidden in read-only browse mode */}
         {!hideGroupCreate && (
           <button
-            onMouseDown={onGroupCreateMouseDown}
+            onMouseDown={onGroupCreateClick ? undefined : onGroupCreateMouseDown}
+            onClick={onGroupCreateClick ? (e) => { e.preventDefault(); onGroupCreateClick(); } : undefined}
             className="text-xs px-2 py-1.5 border border-blue-700 rounded
                        text-blue-300 bg-blue-950/30 hover:bg-blue-900/40
                        cursor-pointer transition-colors shrink-0 select-none"
-            title="按住拖拽到列表中创建分组"
+            title={onGroupCreateClick ? "创建分组" : "按住拖拽到列表中创建分组"}
           >
             + 分组
           </button>

@@ -76,9 +76,31 @@ export default function CollectionsPage({
             ...m,
             currentSettings:
               snap && Object.keys(snap).length > 0 ? snap : m.currentSettings,
+            // ★ v3: show the collection's order snapshot (falls back to 0)
+            order: selected?.modOrder?.[key] ?? 0,
           };
         }),
     [mods, memberSet, selected],
+  );
+
+  // ★ v3: write load-order back into the collection data (immediate)
+  const handleOrderChange = useCallback(
+    (key: string, order: number) => {
+      if (!selected) return;
+      const store = useCollectionStore.getState();
+      const updated = store.collections.map((c) =>
+        c.id === selected.id
+          ? {
+              ...c,
+              modOrder: { ...(c.modOrder ?? {}), [key]: order },
+              updatedAt: new Date().toISOString(),
+            }
+          : c,
+      );
+      useCollectionStore.setState({ collections: updated });
+      try { localStorage.setItem("twm-mod-collections", JSON.stringify(updated)); } catch { /* ignore */ }
+    },
+    [selected],
   );
 
   // Conflict detection within the selected collection's member scope
@@ -187,6 +209,8 @@ export default function CollectionsPage({
             conflictMap={conflictMap}
             modTitles={modTitles}
             readOnly
+            allowOrder
+            onOrderChange={handleOrderChange}
             onOpenConfig={(key) => setConfigModKey(key)}
             onContextMenu={(e, mod, key) => {
               e.preventDefault();

@@ -14,8 +14,10 @@ interface Props {
   conflictMap?: Map<string, ConflictGroup[]>;
   /** modKey → title map for conflict dialog (optional). */
   modTitles?: Record<string, string>;
-  /** Read-only mode (collections): toggle/order disabled. */
+  /** Read-only mode (collections): toggle disabled. */
   readOnly?: boolean;
+  /** ★ allow load-order controls even when readOnly (collections per decision). */
+  allowOrder?: boolean;
   onToggle?: (fileId: number, enabled: boolean) => void;
   onOrderChange?: (key: string, order: number) => void;
   onContextMenu?: (e: React.MouseEvent, mod: ModInfo, key: string) => void;
@@ -41,6 +43,7 @@ export default function MemberModList({
   conflictMap,
   modTitles,
   readOnly,
+  allowOrder,
   onToggle,
   onOrderChange,
   onContextMenu,
@@ -185,22 +188,24 @@ export default function MemberModList({
                       onOpenConfig ? () => onOpenConfig(key) : undefined
                     }
                     onOrderUp={
-                      readOnly
+                      readOnly && !allowOrder
                         ? undefined
                         : () => onOrderChange?.(key, m.order + 1)
                     }
                     onOrderDown={
-                      readOnly
+                      readOnly && !allowOrder
                         ? undefined
                         : () => onOrderChange?.(key, Math.max(0, m.order - 1))
                     }
                     onOrderChange={
-                      readOnly ? undefined : (order) => onOrderChange?.(key, order)
+                      readOnly && !allowOrder
+                        ? undefined
+                        : (order) => onOrderChange?.(key, order)
                     }
                     conflicts={conflictMap?.get(key)}
                     modTitles={modTitles}
                     viewMode={filter.viewMode}
-                    hideToggleAndOrder={readOnly || selectable}
+                    hideToggleAndOrder={readOnly && !allowOrder || selectable}
                   />
                 </div>
                 {inExisting && (

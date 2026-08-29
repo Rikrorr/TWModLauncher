@@ -164,6 +164,8 @@ export interface ModCollection {
   groups?: { name: string; modKeys: string[] }[];
   /** Optional preset enabled subset (defaults to all members) */
   enabledMods?: string[];
+  /** ★ v3: per-member load order snapshot (collections can carry order too) */
+  modOrder?: Record<string, number>;
   /** ★ v3: per-member mod settings snapshot (independent from the read-mods base config) */
   modSettings?: Record<string, Record<string, unknown>>;
   /** Mod metadata for missing-mod detection on import */

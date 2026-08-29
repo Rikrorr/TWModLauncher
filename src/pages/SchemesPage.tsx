@@ -15,13 +15,13 @@ import {
   type CollectionMergeConflict,
 } from "../utils/schemeMembers";
 import { detectMissingMods } from "../utils/migrateProfile";
-import type { ModInfo, ModMeta, ModCollection, ProfileData, ProfileMeta } from "../lib/types";
+import type { ModGroup, ModInfo, ModMeta, ModCollection, ProfileData, ProfileMeta } from "../lib/types";
 import ModActionMenu from "../components/common/ModActionMenu";
 import AddModPanel from "../components/common/AddModPanel";
 import ContainerSelect from "../components/common/ContainerSelect";
 import CreateDialog from "../components/common/CreateDialog";
+import ContainerModList from "../components/ModList/ContainerModList";
 import SettingsEditor from "../components/SettingsEditor/SettingsEditor";
-import MemberModList from "../components/ModList/MemberModList";
 import MissingModsDialog from "../components/ProfileManager/MissingModsDialog";
 import { createLogger } from "../lib/logger";
 
@@ -157,6 +157,77 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     setScheme((prev) => {
       if (!prev) return prev;
       const next = removeModsFromScheme(prev, [key]);
+      void saveScheme(next).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  // ★ v3: containerized groups / displayOrder (bound to the scheme data)
+  const handleGroupsChange = useCallback((groups: ModGroup[]) => {
+    setScheme((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, groups };
+      void saveScheme(next).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const handleDisplayOrderChange = useCallback((displayOrder: string[]) => {
+    setScheme((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, displayOrder };
+      void saveScheme(next).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const handleMoveToGroup = useCallback((modKey: string, groupId: string | null) => {
+    setScheme((prev) => {
+      if (!prev) return prev;
+      const groups = (prev.groups ?? []).map((g) => ({
+        ...g,
+        modKeys: g.modKeys.filter((k) => k !== modKey),
+      }));
+      if (groupId) {
+        const target = groups.find((g) => g.id === groupId);
+        if (target) target.modKeys = [...target.modKeys, modKey];
+      }
+      // Ensure the mod key exists in displayOrder
+      const displayOrder = prev.displayOrder?.includes(modKey)
+        ? prev.displayOrder
+        : [...(prev.displayOrder ?? []), modKey];
+      const next = { ...prev, groups, displayOrder };
+      void saveScheme(next).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const handleApplyOrder = useCallback(() => {
+    setScheme((prev) => {
+      if (!prev) return prev;
+      // Reassign modOrder 0,1,2... following displayOrder (enabled mods only)
+      const modOrder: Record<string, number> = {};
+      let nextOrder = 0;
+      const emitted = new Set<string>();
+      for (const key of prev.displayOrder ?? []) {
+        const group = (prev.groups ?? []).find((g) => g.id === key);
+        if (group) {
+          for (const mk of group.modKeys) {
+            if ((prev.enabledMods ?? []).includes(mk) && !emitted.has(mk)) {
+              modOrder[mk] = nextOrder++;
+              emitted.add(mk);
+            }
+          }
+        } else if ((prev.enabledMods ?? []).includes(key) && !emitted.has(key)) {
+          modOrder[key] = nextOrder++;
+          emitted.add(key);
+        }
+      }
+      // Remaining enabled mods not in displayOrder
+      for (const mk of prev.enabledMods ?? []) {
+        if (!emitted.has(mk)) modOrder[mk] = nextOrder++;
+      }
+      const next = { ...prev, modOrder };
       void saveScheme(next).catch(() => {});
       return next;
     });
@@ -394,8 +465,10 @@ export default function SchemesPage({ mods, onActivate }: Props) {
             <p className="text-sm text-slate-500">从上方选择一个方案查看成员</p>
           </div>
         ) : (
-          <MemberModList
+          <ContainerModList
             mods={displayMods}
+            groups={scheme.groups ?? []}
+            displayOrder={scheme.displayOrder ?? []}
             conflictMap={conflictMap}
             modTitles={modTitles}
             onToggle={(fileId, enabled) => handleToggleMember(fileId, enabled)}
@@ -405,14 +478,10 @@ export default function SchemesPage({ mods, onActivate }: Props) {
               e.preventDefault();
               setContextMenu({ x: e.clientX, y: e.clientY, key, mod });
             }}
-            emptyAction={
-              <button
-                onClick={() => setAddOpen(true)}
-                className="text-xs px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded cursor-pointer"
-              >
-                ＋ 添加第一个 Mod
-              </button>
-            }
+            onGroupsChange={handleGroupsChange}
+            onDisplayOrderChange={handleDisplayOrderChange}
+            onMoveToGroup={handleMoveToGroup}
+            onApplyOrder={handleApplyOrder}
           />
         )}
       </div>
