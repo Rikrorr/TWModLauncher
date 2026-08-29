@@ -190,7 +190,7 @@ export function useGroupCreateDrag({
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [setGroups, setDisplayOrder]);
 
   return {
     groupCreateState: state,

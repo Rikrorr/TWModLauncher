@@ -102,14 +102,23 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
   const toggleMod = controlled?.toggleMod ?? storeToggleMod;
   const setModOrder = controlled?.setModOrder ?? storeSetModOrder;
   const groups = controlled?.groups ?? storeGroups;
-  // Normalize setGroups to accept either a value or an updater function
-  const setGroups = controlled
-    ? (updater: ModGroup[] | ((prev: ModGroup[]) => ModGroup[])) => {
+  // Normalize setGroups to accept either a value or an updater function.
+  // Stable via ref so drag-hook closures always see the latest controlled value.
+  const controlledRef = useRef(controlled);
+  useEffect(() => { controlledRef.current = controlled; }, [controlled]);
+  const setGroups = useCallback(
+    (updater: ModGroup[] | ((prev: ModGroup[]) => ModGroup[])) => {
+      const c = controlledRef.current;
+      if (c) {
         const next =
-          typeof updater === "function" ? updater(controlled.groups) : updater;
-        controlled.setGroups(next);
+          typeof updater === "function" ? updater(c.groups) : updater;
+        c.setGroups(next);
+      } else {
+        storeSetGroups(updater);
       }
-    : storeSetGroups;
+    },
+    [storeSetGroups],
+  );
   // ★ v2: active scheme member whitelist for dual-view (members + pool).
   // Controlled mode (scheme/collection) has no pool concept — disabled.
   const activeSchemeName = controlled ? null : storeActiveSchemeName;
@@ -149,14 +158,21 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
   const filter = useModListState(mods);
 
   // ★ v3: displayOrder — controlled (container) or global filter state.
+  // Stable via controlledRef so drag-hook closures always see the latest value.
   const displayOrder = controlled?.displayOrder ?? filter.displayOrder;
-  const setDisplayOrder: (updater: string[] | ((prev: string[]) => string[])) => void = controlled
-    ? (updater) => {
+  const setDisplayOrder: (updater: string[] | ((prev: string[]) => string[])) => void = useCallback(
+    (updater) => {
+      const c = controlledRef.current;
+      if (c) {
         const next =
-          typeof updater === "function" ? updater(controlled.displayOrder) : updater;
-        controlled.setDisplayOrder(next);
+          typeof updater === "function" ? updater(c.displayOrder) : updater;
+        c.setDisplayOrder(next);
+      } else {
+        filter.setDisplayOrder(updater);
       }
-    : filter.setDisplayOrder;
+    },
+    [filter],
+  );
 
   // ── Group helpers ────────────────────────────────────────────────────────
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
