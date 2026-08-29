@@ -401,36 +401,36 @@ export default function ModCard({
           )}
         </div>
 
-        <div className="flex items-center gap-3 mt-1 text-xs text-slate-400">
-          <span title={mod.author}>作者: {mod.author}</span>
-          {mod.version && <span>v{mod.version}</span>}
+        {/* ★ v3: meta row — author/version/gameVersion/updatedAt, then dir path + copy (truncated when tight) */}
+        <div className="flex items-center gap-3 mt-1 text-xs text-slate-400 min-w-0">
+          <span title={mod.author} className="shrink-0">作者: {mod.author}</span>
+          {mod.version && <span className="shrink-0">v{mod.version}</span>}
           {mod.gameVersion && (
-            <span className="text-slate-500">游戏 {mod.gameVersion}</span>
+            <span className="text-slate-500 shrink-0">游戏 {mod.gameVersion}</span>
           )}
           {mod.updatedAt && (
-            <span className="text-slate-500">更新 {mod.updatedAt}</span>
+            <span className="text-slate-500 shrink-0">更新 {mod.updatedAt}</span>
+          )}
+          {viewMode === "detailed" && mod.dirPath && (
+            <>
+              <span className="flex-1 min-w-0" />
+              <span className="text-[10px] text-slate-600 truncate min-w-0 max-w-[180px]" title={mod.dirPath}>
+                {mod.dirPath}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigator.clipboard.writeText(mod.dirPath).catch(() => {});
+                  message("目录路径已复制", { title: "复制", kind: "info" });
+                }}
+                title="复制目录路径"
+                className="text-slate-600 hover:text-slate-300 cursor-pointer shrink-0 text-[10px]"
+              >
+                📋
+              </button>
+            </>
           )}
         </div>
-
-        {/* ★ v2: mod local directory — shown with copy affordance */}
-        {viewMode === "detailed" && mod.dirPath && (
-          <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-600">
-            <span className="truncate max-w-56" title={mod.dirPath}>
-              {mod.dirPath}
-            </span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                navigator.clipboard.writeText(mod.dirPath).catch(() => {});
-                message("目录路径已复制", { title: "复制", kind: "info" });
-              }}
-              title="复制目录路径"
-              className="text-slate-600 hover:text-slate-300 cursor-pointer shrink-0"
-            >
-              📋
-            </button>
-          </div>
-        )}
 
         {viewMode === "detailed" && mod.description && (
           <p

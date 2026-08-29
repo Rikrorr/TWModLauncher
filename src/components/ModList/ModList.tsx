@@ -806,6 +806,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
         }
         onApplyOrder={readOnly ? () => {} : handleApplyOrder}
         onGroupCreateMouseDown={handleGroupCreateMouseDown}
+        hideGroupCreate={readOnly}
       />
 
       {/* Scrollable cards area */}

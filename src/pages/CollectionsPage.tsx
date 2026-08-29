@@ -160,19 +160,6 @@ export default function CollectionsPage({
         {selected && (
           <>
             <button
-              onClick={() => {
-                try {
-                  localStorage.setItem("twm-mod-collections", JSON.stringify(useCollectionStore.getState().collections));
-                  setLastMessage(`集合 "${selected.name}" 已保存`);
-                } catch {
-                  setLastMessage("保存失败");
-                }
-              }}
-              className="text-xs px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded cursor-pointer"
-            >
-              保存
-            </button>
-            <button
               onClick={() => onCreateSchemeFromCollection(selected.id)}
               className="text-xs px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded cursor-pointer"
             >
@@ -297,8 +284,16 @@ export default function CollectionsPage({
         const mod = memberMods.find((m) => `${m.source}_${m.fileId}` === configModKey);
         if (!mod) return null;
         return (
-          <div className="fixed inset-0 z-[170] flex items-center justify-center bg-black/60">
-            <div className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl w-[640px] max-w-[95vw] h-[80vh] max-h-[85vh] flex flex-col overflow-hidden">
+          <div
+            className="fixed inset-0 z-[170] flex items-center justify-center bg-black/60"
+            onClick={() => setConfigModKey(null)}
+          >
+            <div
+              className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl
+                         w-[72vw] h-[82vh] max-w-[900px] max-h-[720px]
+                         flex flex-col overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
               <SettingsEditor
                 mod={mod}
                 onClose={() => setConfigModKey(null)}

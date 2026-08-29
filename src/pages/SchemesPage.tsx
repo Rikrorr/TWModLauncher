@@ -36,7 +36,6 @@ const log = createLogger("SchemesPage");
 export default function SchemesPage({ mods, onActivate }: Props) {
   const [profiles, setProfiles] = useState<ProfileMeta[]>([]);
   const [scheme, setScheme] = useState<ProfileData | null>(null);
-  const [dirty, setDirty] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [missingMods, setMissingMods] = useState<Map<string, ModMeta> | null>(null);
   const [pendingActivate, setPendingActivate] = useState<ProfileData | null>(null);
@@ -78,7 +77,6 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     loadScheme(selectedName).then((data) => {
       if (!cancelled && data) {
         setScheme(data);
-        setDirty(false);
         setConfigModKey(null);
       }
     });
@@ -138,8 +136,9 @@ export default function SchemesPage({ mods, onActivate }: Props) {
         const enabledSet = new Set(prev.enabledMods ?? []);
         if (enabled) enabledSet.add(key);
         else enabledSet.delete(key);
-        setDirty(true);
-        return { ...prev, enabledMods: [...enabledSet] };
+        const next = { ...prev, enabledMods: [...enabledSet] };
+        void saveScheme(next).catch(() => {});
+        return next;
       });
     },
     [modKeyForFileId],
@@ -148,16 +147,18 @@ export default function SchemesPage({ mods, onActivate }: Props) {
   const handleOrderChange = useCallback((key: string, order: number) => {
     setScheme((prev) => {
       if (!prev) return prev;
-      setDirty(true);
-      return { ...prev, modOrder: { ...(prev.modOrder ?? {}), [key]: order } };
+      const next = { ...prev, modOrder: { ...(prev.modOrder ?? {}), [key]: order } };
+      void saveScheme(next).catch(() => {});
+      return next;
     });
   }, []);
 
   const handleRemoveMember = useCallback((key: string) => {
     setScheme((prev) => {
       if (!prev) return prev;
-      setDirty(true);
-      return removeModsFromScheme(prev, [key]);
+      const next = removeModsFromScheme(prev, [key]);
+      void saveScheme(next).catch(() => {});
+      return next;
     });
   }, []);
 
@@ -165,7 +166,6 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     if (!scheme) return;
     try {
       await saveScheme(scheme);
-      setDirty(false);
       setLastMessage(`方案 "${scheme.name}" 已保存`);
       void refresh();
     } catch (e) {
@@ -250,7 +250,6 @@ export default function SchemesPage({ mods, onActivate }: Props) {
       try {
         await saveProfile(name, JSON.stringify(data, null, 2));
         setSelectedName(name);
-        setDirty(false);
         setLastMessage(`方案 "${name}" 已创建`);
         void refresh();
       } catch (e) {
@@ -272,8 +271,9 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     (col: ModCollection, conflict: CollectionMergeConflict, mode: "all" | "partial") => {
       setScheme((prev) => {
         if (!prev) return prev;
-        setDirty(true);
-        return mergeCollectionIntoScheme(prev, col, conflict, mode);
+        const next = mergeCollectionIntoScheme(prev, col, conflict, mode);
+        void saveScheme(next).catch(() => {});
+        return next;
       });
       setMergeConflict(null);
       setAddCollectionOpen(false);
@@ -344,14 +344,6 @@ export default function SchemesPage({ mods, onActivate }: Props) {
           }
         />
 
-        {dirty && (
-          <button
-            onClick={() => void handleSave()}
-            className="text-xs px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded cursor-pointer"
-          >
-            保存更改
-          </button>
-        )}
         {scheme && (
           <button
             onClick={() => void handleActivate()}
@@ -434,13 +426,14 @@ export default function SchemesPage({ mods, onActivate }: Props) {
           onAdd={(keys) => {
             setScheme((prev) => {
               if (!prev) return prev;
-              setDirty(true);
-              return addModsToScheme(
+              const next = addModsToScheme(
                 prev,
                 keys,
                 buildModMeta(mods, keys),
                 buildModSettings(mods, keys),
               );
+              void saveScheme(next).catch(() => {});
+              return next;
             });
           }}
           onClose={() => setAddOpen(false)}
@@ -452,22 +445,31 @@ export default function SchemesPage({ mods, onActivate }: Props) {
         const mod = displayMods.find((m) => `${m.source}_${m.fileId}` === configModKey);
         if (!mod) return null;
         return (
-          <div className="fixed inset-0 z-[170] flex items-center justify-center bg-black/60">
-            <div className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl w-[640px] max-w-[95vw] h-[80vh] max-h-[85vh] flex flex-col overflow-hidden">
+          <div
+            className="fixed inset-0 z-[170] flex items-center justify-center bg-black/60"
+            onClick={() => setConfigModKey(null)}
+          >
+            <div
+              className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl
+                         w-[72vw] h-[82vh] max-w-[900px] max-h-[720px]
+                         flex flex-col overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
               <SettingsEditor
                 mod={mod}
                 onClose={() => setConfigModKey(null)}
                 onSettingsSaved={(settings) => {
                   setScheme((prev) => {
                     if (!prev) return prev;
-                    setDirty(true);
-                    return {
+                    const next = {
                       ...prev,
                       modSettings: {
                         ...(prev.modSettings ?? {}),
                         [configModKey]: { ...settings },
                       },
                     };
+                    void saveScheme(next).catch(() => {});
+                    return next;
                   });
                 }}
               />

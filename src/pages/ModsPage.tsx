@@ -112,7 +112,7 @@ export default function ModsPage({
         )}
       </div>
 
-      <div className={`flex-1 flex flex-col overflow-hidden ${selectedMod ? "hidden" : ""}`}>
+      <div className="flex-1 flex flex-col overflow-hidden">
         <ModList
           saving={saving}
           onSelectMod={onSelectMod}
@@ -129,18 +129,29 @@ export default function ModsPage({
         />
       </div>
 
+      {/* ★ v3: config editor as a modal window (click outside to close) */}
       {selectedMod && (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <SettingsEditor
-            mod={selectedMod}
-            onClose={() => selectMod(null)}
-            onSettingsSaved={(settings) => {
-              updateModSettings(selectedModKey!, settings);
-              addDirtyModSetting(selectedModKey!);
-              setDirty(true);
-              onSettingsSaved(selectedModKey!, settings);
-            }}
-          />
+        <div
+          className="fixed inset-0 z-[170] flex items-center justify-center bg-black/60"
+          onClick={() => selectMod(null)}
+        >
+          <div
+            className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl
+                       w-[72vw] h-[82vh] max-w-[900px] max-h-[720px]
+                       flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <SettingsEditor
+              mod={selectedMod}
+              onClose={() => selectMod(null)}
+              onSettingsSaved={(settings) => {
+                updateModSettings(selectedModKey!, settings);
+                addDirtyModSetting(selectedModKey!);
+                setDirty(true);
+                onSettingsSaved(selectedModKey!, settings);
+              }}
+            />
+          </div>
         </div>
       )}
     </div>

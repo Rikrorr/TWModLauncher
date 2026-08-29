@@ -67,10 +67,11 @@ export default function SettingsEditor({ mod, onClose, onSettingsSaved }: Props)
         <div className="flex items-center gap-2 shrink-0 ml-3">
           <button
             onClick={onClose}
-            className="px-3 py-1 text-xs border border-slate-600 hover:border-slate-400
-                       text-slate-400 rounded transition-colors cursor-pointer"
+            title="关闭"
+            className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-100
+                       hover:bg-slate-700/60 rounded transition-colors cursor-pointer text-base leading-none"
           >
-            关闭
+            ✕
           </button>
         </div>
       </div>
