@@ -45,27 +45,26 @@ export default function SchemesPage({ mods, onActivate }: Props) {
   const [configModKey, setConfigModKey] = useState<string | null>(null);
   // ★ v3: container-local multi-select (isolated from the global read-mods selection)
   const [selectedModKeys, setSelectedModKeys] = useState<string[]>([]);
-  // Shift-range anchor is kept internally by ModList; we only need the set
-  const setLastClickedKey = useCallback((_k: string | null) => { /* ModList owns the anchor */ }, []);
+  const [lastClickedKey, setLastClickedKey] = useState<string | null>(null);
   const selectModOnly = useCallback((key: string) => {
     setSelectedModKeys([key]);
     setLastClickedKey(key);
-  }, [setLastClickedKey]);
+  }, []);
   const toggleSelectMod = useCallback((key: string) => {
     setSelectedModKeys((prev) => {
       const exists = prev.includes(key);
       return exists ? prev.filter((k) => k !== key) : [...prev, key];
     });
     setLastClickedKey(key);
-  }, [setLastClickedKey]);
+  }, []);
   const addModsToSelection = useCallback((keys: string[]) => {
     setSelectedModKeys((prev) => [...new Set([...prev, ...keys])]);
     if (keys.length > 0) setLastClickedKey(keys[keys.length - 1]);
-  }, [setLastClickedKey]);
+  }, []);
   const clearSelection = useCallback(() => {
     setSelectedModKeys([]);
     setLastClickedKey(null);
-  }, [setLastClickedKey]);
+  }, []);
 
   const activeSchemeName = useAppStore((s) => s.activeSchemeName);
   // ★ v3: edit selection lifted to global store (persisted across page switches)
@@ -129,6 +128,21 @@ export default function SchemesPage({ mods, onActivate }: Props) {
       }),
     [memberMods, scheme],
   );
+
+  // ★ v3: effective displayOrder — ensure every member key is present so
+  // drag-to-reorder works even for schemes created before displayOrder was tracked.
+  const effectiveDisplayOrder = useMemo(() => {
+    const base = scheme?.displayOrder ?? [];
+    const order = base.filter((k) => {
+      const isGroup = (scheme?.groups ?? []).some((g) => g.id === k);
+      const isMember = (scheme?.modKeys ?? []).includes(k);
+      return isGroup || isMember;
+    });
+    for (const mk of scheme?.modKeys ?? []) {
+      if (!order.includes(mk)) order.push(mk);
+    }
+    return order;
+  }, [scheme]);
 
   const modKeyForFileId = useCallback(
     (fileId: number): string | null => {
@@ -430,7 +444,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
             controlled={{
               mods: displayMods,
               groups: scheme.groups ?? [],
-              displayOrder: scheme.displayOrder ?? [],
+              displayOrder: effectiveDisplayOrder,
               setGroups: handleGroupsChange,
               setDisplayOrder: handleDisplayOrderChange,
               toggleMod: (fileId, enabled) => handleToggleMember(fileId, enabled),
@@ -440,6 +454,8 @@ export default function SchemesPage({ mods, onActivate }: Props) {
               selectModOnly,
               toggleSelectMod,
               addModsToSelection,
+              lastClickedKey,
+              setLastClickedKey,
             }}
             modMenu={{
               schemes: profiles,

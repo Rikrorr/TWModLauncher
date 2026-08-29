@@ -50,50 +50,53 @@ export default function CollectionsPage({
 
   // ★ v3: container-local multi-select (isolated from the global read-mods selection)
   const [selectedModKeys, setSelectedModKeys] = useState<string[]>([]);
-  const setLastClickedKey = useCallback((_k: string | null) => { /* ModList owns the anchor */ }, []);
+  const [lastClickedKey, setLastClickedKey] = useState<string | null>(null);
   const selectModOnly = useCallback((key: string) => {
     setSelectedModKeys([key]);
     setLastClickedKey(key);
-  }, [setLastClickedKey]);
+  }, []);
   const toggleSelectMod = useCallback((key: string) => {
     setSelectedModKeys((prev) => {
       const exists = prev.includes(key);
       return exists ? prev.filter((k) => k !== key) : [...prev, key];
     });
     setLastClickedKey(key);
-  }, [setLastClickedKey]);
+  }, []);
   const addModsToSelection = useCallback((keys: string[]) => {
     setSelectedModKeys((prev) => [...new Set([...prev, ...keys])]);
     if (keys.length > 0) setLastClickedKey(keys[keys.length - 1]);
-  }, [setLastClickedKey]);
+  }, []);
   const clearSelection = useCallback(() => {
     setSelectedModKeys([]);
     setLastClickedKey(null);
-  }, [setLastClickedKey]);
+  }, []);
 
   // ★ v3: session-local groups/displayOrder derived from the selected collection
   const [sessionGroups, setSessionGroups] = useState<ModGroup[]>([]);
   const [sessionDisplayOrder, setSessionDisplayOrder] = useState<string[]>([]);
   useEffect(() => {
-    if (!selected) {
-      setSessionGroups([]);
-      setSessionDisplayOrder([]);
-      return;
-    }
-    // Build ModGroup[] from the collection's preset groups (stable ids) + members
-    const groups: ModGroup[] = (selected.groups ?? []).map((g, i) => ({
-      id: `cg-${selected.id.slice(0, 8)}-${i}`,
-      name: g.name,
-      collapsed: false,
-      modKeys: g.modKeys.filter((k) => selected.modKeys.includes(k)),
-    }));
-    const grouped = new Set(groups.flatMap((g) => g.modKeys));
-    const order: string[] = [
-      ...groups.map((g) => g.id),
-      ...selected.modKeys.filter((k) => !grouped.has(k)),
-    ];
-    setSessionGroups(groups);
-    setSessionDisplayOrder(order);
+    const t = setTimeout(() => {
+      if (!selected) {
+        setSessionGroups([]);
+        setSessionDisplayOrder([]);
+        return;
+      }
+      // Build ModGroup[] from the collection's preset groups (stable ids) + members
+      const groups: ModGroup[] = (selected.groups ?? []).map((g, i) => ({
+        id: `cg-${selected.id.slice(0, 8)}-${i}`,
+        name: g.name,
+        collapsed: false,
+        modKeys: g.modKeys.filter((k) => selected.modKeys.includes(k)),
+      }));
+      const grouped = new Set(groups.flatMap((g) => g.modKeys));
+      const order: string[] = [
+        ...groups.map((g) => g.id),
+        ...selected.modKeys.filter((k) => !grouped.has(k)),
+      ];
+      setSessionGroups(groups);
+      setSessionDisplayOrder(order);
+    }, 0);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
@@ -259,6 +262,8 @@ export default function CollectionsPage({
               selectModOnly,
               toggleSelectMod,
               addModsToSelection,
+              lastClickedKey,
+              setLastClickedKey,
             }}
             modMenu={{
               schemes: [],

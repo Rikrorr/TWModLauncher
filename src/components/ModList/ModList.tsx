@@ -66,6 +66,9 @@ interface Props {
     selectModOnly: (key: string) => void;
     toggleSelectMod: (key: string) => void;
     addModsToSelection: (keys: string[]) => void;
+    /** ★ shift-range anchor (defaults to null in controlled mode). */
+    lastClickedKey?: string | null;
+    setLastClickedKey?: (key: string | null) => void;
   };
 }
 
@@ -135,7 +138,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
 
   // ── Multi-select: controlled or global store ──────────────────────────────
   const selectedModKeys = controlled?.selectedModKeys ?? storeSelectedModKeys;
-  const lastClickedKey = controlled ? null : storeLastClickedKey;
+  const lastClickedKey = controlled ? (controlled.lastClickedKey ?? null) : storeLastClickedKey;
   const selectModOnly = controlled?.selectModOnly ?? storeSelectModOnly;
   const toggleSelectMod = controlled?.toggleSelectMod ?? storeToggleSelectMod;
   const addModsToSelection = controlled?.addModsToSelection ?? storeAddModsToSelection;

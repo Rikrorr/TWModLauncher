@@ -14,7 +14,8 @@ export async function loadScheme(name: string): Promise<ProfileData | null> {
 }
 
 /** Add mod keys to a scheme's member whitelist + enabled list (dedup).
- *  Optionally carries a per-mod settings snapshot (from the read-mods base config). */
+ *  Optionally carries a per-mod settings snapshot (from the read-mods base config).
+ *  Also appends new members to displayOrder so drag-to-reorder works. */
 export function addModsToScheme(
   data: ProfileData,
   modKeys: string[],
@@ -23,14 +24,19 @@ export function addModsToScheme(
 ): ProfileData {
   const memberSet = new Set(data.modKeys ?? []);
   const enabledSet = new Set(data.enabledMods ?? []);
+  const displayOrder = [...(data.displayOrder ?? [])];
   for (const k of modKeys) {
+    const isNew = !memberSet.has(k);
     memberSet.add(k);
     enabledSet.add(k); // newly added mods are enabled by default
+    // Append new members to the unified displayOrder (group ids preserved)
+    if (isNew && !displayOrder.includes(k)) displayOrder.push(k);
   }
   return {
     ...data,
     modKeys: [...memberSet],
     enabledMods: [...enabledSet],
+    displayOrder,
     modMeta: { ...(data.modMeta ?? {}), ...modMeta },
     modSettings: modSettings
       ? { ...(data.modSettings ?? {}), ...modSettings }
@@ -200,10 +206,21 @@ export function mergeCollectionIntoScheme(
     mergedSettings[k] = v;
   }
 
+  // 5. Build unified displayOrder: keep existing entries (group ids + member keys),
+  //    then append new groups and ungrouped members not already present.
+  const mergedDisplayOrder = [...(scheme.displayOrder ?? [])];
+  for (const g of newGroups) {
+    if (!mergedDisplayOrder.includes(g.id)) mergedDisplayOrder.push(g.id);
+  }
+  for (const mk of [...memberSet]) {
+    if (!mergedDisplayOrder.includes(mk)) mergedDisplayOrder.push(mk);
+  }
+
   return {
     ...scheme,
     modKeys: [...memberSet],
     enabledMods: [...enabledSet],
+    displayOrder: mergedDisplayOrder,
     modMeta: { ...(scheme.modMeta ?? {}), ...(collection.modMeta ?? {}) },
     modSettings: mergedSettings,
     groups: newGroups,
