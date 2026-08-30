@@ -7,14 +7,11 @@ interface Props {
   onClose: () => void;
 }
 
-const PALETTE = [
-  "#3b82f6", "#22c55e", "#eab308", "#ef4444",
-  "#a855f7", "#ec4899", "#14b8a6", "#f97316",
-];
-
 /**
- * Tag manager window — checkbox the current mod's tags, plus a dropdown
- * manager to create / rename / recolor user-defined tags.
+ * Tag manager window — same modal shell & interaction as AddModPanel
+ * (fixed overlay + centered panel with header / content / footer).
+ * Left: checkbox the current mod's tags. Right: manage tags (dropdown input,
+ * native color picker, create / rename / recolor / delete).
  */
 export default function CategoryPicker({ modKey, title, onClose }: Props) {
   const categories = useCategoryStore((s) => s.categories);
@@ -27,10 +24,10 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
   const current = useMemo(() => modCats[modKey] ?? [], [modCats, modKey]);
 
   const [input, setInput] = useState("");
-  const [color, setColor] = useState(PALETTE[0]);
+  const [color, setColor] = useState("#3b82f6");
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const renameRef = useRef<HTMLDivElement>(null);
 
   const matched = useMemo(() => {
@@ -91,7 +88,7 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) onClose();
     };
     const keyHandler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -123,128 +120,152 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
   }, [renameOpen]);
 
   return (
-    <>
+    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60">
       <div
-        ref={ref}
-        className="fixed z-[100] w-80 bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-3"
-        style={{ left: "50%", top: "50%", transform: "translate(-50%, -50%)" }}
+        ref={panelRef}
+        className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl
+                   w-[760px] max-w-[95vw] max-h-[85vh] flex flex-col"
       >
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-slate-200 truncate pr-2" title={title}>
-            标签: {title}
-          </span>
-          <button
-            onClick={onClose}
-            className="text-[10px] px-1.5 py-0.5 text-slate-400 hover:text-slate-200 cursor-pointer"
-          >
-            ✕
+        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
+          <h2 className="text-sm font-semibold text-slate-200 truncate">标签: {title}</h2>
+          <span className="text-[10px] text-slate-500 hidden sm:inline">勾选当前 Mod 标签 · 管理自定义标签</span>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 cursor-pointer text-lg leading-none">
+            ×
           </button>
         </div>
 
-        <div className="mb-3">
-          <p className="text-[10px] text-slate-500 mb-1">当前 Mod 标签</p>
-          {categories.length === 0 ? (
-            <p className="text-xs text-slate-600">暂无自定义标签</p>
-          ) : (
-            <div className="space-y-0.5 max-h-32 overflow-y-auto">
-              {categories.map((c) => {
-                const checked = current.includes(c.id);
-                return (
-                  <label
-                    key={c.id}
-                    className="flex items-center gap-2 px-1 py-0.5 rounded hover:bg-slate-700/50 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleTag(c.id)}
-                      className="accent-blue-500"
-                    />
-                    <span
-                      className="w-3 h-3 rounded-full"
-                      style={{ background: c.color ?? "#3b82f6" }}
-                    />
-                    <span className={`text-xs flex-1 ${checked ? "text-slate-200" : "text-slate-400"}`}>
-                      {c.name}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-slate-700 pt-2">
-          <p className="text-[10px] text-slate-500 mb-1">管理标签（输入或选择已有标签）</p>
-          <input
-            list="tag-options"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="输入新标签名或选择已有标签..."
-            className="w-full text-xs px-2 py-1.5 bg-slate-700 border border-slate-600 rounded
-                       text-slate-200 outline-none focus:border-blue-500 mb-2"
-          />
-          <datalist id="tag-options">
-            {categories.map((c) => (
-              <option key={c.id} value={c.name} />
-            ))}
-          </datalist>
-
-          <div className="flex items-center gap-1 mb-2">
-            <span className="text-[10px] text-slate-500 mr-1">颜色:</span>
-            {PALETTE.map((c) => (
-              <button
-                key={c}
-                onClick={() => changeColor(c)}
-                className={`w-5 h-5 rounded-full border-2 transition-transform cursor-pointer ${
-                  (matched?.color ?? color) === c
-                    ? "border-white scale-110"
-                    : "border-transparent hover:scale-110"
-                }`}
-                style={{ background: c }}
-              />
-            ))}
+        <div className="flex-1 overflow-y-auto flex min-h-0">
+          <div className="w-1/2 border-r border-slate-700 p-4">
+            <p className="text-xs text-slate-400 mb-2">当前 Mod 标签</p>
+            {categories.length === 0 ? (
+              <p className="text-xs text-slate-600 py-6 text-center">暂无自定义标签</p>
+            ) : (
+              <div className="space-y-1">
+                {categories.map((c) => {
+                  const checked = current.includes(c.id);
+                  return (
+                    <label
+                      key={c.id}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-700/50 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleTag(c.id)}
+                        className="accent-blue-500"
+                      />
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0"
+                        style={{ background: c.color ?? "#3b82f6" }}
+                      />
+                      <span className={`text-xs flex-1 truncate ${checked ? "text-slate-200" : "text-slate-400"}`}>
+                        {c.name}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          {selectedTag && (
-            <div className="flex items-center gap-2 text-xs text-slate-300 bg-slate-700/50 rounded px-2 py-1 mb-2">
-              <span
-                className="w-3 h-3 rounded-full shrink-0"
-                style={{ background: selectedTag.color ?? "#3b82f6" }}
-              />
-              <span className="truncate flex-1">{selectedTag.name}</span>
-              <button
-                onClick={() => {
-                  deleteCategory(selectedTag.id);
-                  persistCategories(useCategoryStore.getState());
-                  setInput("");
-                }}
-                title="删除此标签"
-                className="text-[10px] text-red-500 hover:text-red-400 cursor-pointer shrink-0"
-              >
-                删除
-              </button>
-            </div>
-          )}
+          <div className="flex-1 p-4">
+            <p className="text-xs text-slate-400 mb-2">管理标签（输入或选择已有标签）</p>
+            <input
+              list="tag-options"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="输入新标签名或选择已有标签..."
+              className="w-full text-xs px-2.5 py-1.5 bg-slate-900 border border-slate-600 rounded
+                         text-slate-200 outline-none focus:border-blue-500 mb-3"
+            />
+            <datalist id="tag-options">
+              {categories.map((c) => (
+                <option key={c.id} value={c.name} />
+              ))}
+            </datalist>
 
-          <div className="flex justify-end mt-1">
-            {matched ? (
-              <button
-                onClick={openRename}
-                className="text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded cursor-pointer"
-              >
-                重命名
-              </button>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs text-slate-400 shrink-0">颜色:</span>
+              <input
+                type="color"
+                value={matched?.color ?? color}
+                onChange={(e) => changeColor(e.target.value)}
+                className="w-8 h-7 rounded cursor-pointer bg-transparent border border-slate-600"
+              />
+              <span className="text-[10px] text-slate-500 font-mono">
+                {matched?.color ?? color}
+              </span>
+            </div>
+
+            {selectedTag ? (
+              <div className="flex items-center gap-2 text-xs text-slate-300 bg-slate-700/50 rounded px-2 py-1.5 mb-3">
+                <span
+                  className="w-3 h-3 rounded-full shrink-0"
+                  style={{ background: selectedTag.color ?? "#3b82f6" }}
+                />
+                <span className="truncate flex-1">{selectedTag.name}</span>
+                <button
+                  onClick={openRename}
+                  className="text-[10px] px-2 py-0.5 bg-amber-600 hover:bg-amber-500 text-white rounded cursor-pointer shrink-0"
+                >
+                  重命名
+                </button>
+                <button
+                  onClick={() => {
+                    deleteCategory(selectedTag.id);
+                    persistCategories(useCategoryStore.getState());
+                    setInput("");
+                  }}
+                  title="删除此标签"
+                  className="text-[10px] px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded cursor-pointer shrink-0"
+                >
+                  删除
+                </button>
+              </div>
             ) : (
-              <button
-                onClick={handleCreate}
-                disabled={!input.trim()}
-                className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50
-                           text-white rounded cursor-pointer"
-              >
-                新建
-              </button>
+              <div className="text-[10px] text-slate-600 mb-3">
+                {input.trim() ? "输入内容与已有标签不同 → 点击下方「新建」创建" : "选择已有标签进行重命名/改色/删除，或输入新名称新建"}
+              </div>
             )}
+
+            <div className="flex justify-end">
+              {matched ? (
+                <button
+                  onClick={openRename}
+                  className="text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded cursor-pointer"
+                >
+                  重命名
+                </button>
+              ) : (
+                <button
+                  onClick={handleCreate}
+                  disabled={!input.trim()}
+                  className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded cursor-pointer"
+                >
+                  新建
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between px-5 py-3 border-t border-slate-700 shrink-0">
+          <span className="text-xs text-slate-500">
+            已选 {current.length} 个标签
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="text-xs px-3 py-1.5 border border-slate-600 text-slate-300 rounded cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              onClick={onClose}
+              className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded cursor-pointer"
+            >
+              完成
+            </button>
           </div>
         </div>
       </div>
@@ -252,7 +273,7 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
       {renameOpen && matched && (
         <div
           ref={renameRef}
-          className="fixed z-[110] bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-4 w-72"
+          className="fixed z-[160] bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-4 w-72"
           style={{ left: "50%", top: "50%", transform: "translate(-50%, -50%)" }}
         >
           <p className="text-xs font-medium text-slate-200 mb-2">
@@ -276,14 +297,13 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
             <button
               onClick={confirmRename}
               disabled={!renameValue.trim()}
-              className="text-xs px-3 py-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-50
-                         text-white rounded cursor-pointer"
+              className="text-xs px-3 py-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded cursor-pointer"
             >
               确认
             </button>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
