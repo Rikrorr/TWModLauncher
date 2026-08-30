@@ -27,7 +27,9 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [listOpen, setListOpen] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const comboRef = useRef<HTMLDivElement>(null);
+  const inputWrapRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const renameRef = useRef<HTMLDivElement>(null);
 
@@ -43,6 +45,16 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
     if (!q) return categories;
     return categories.filter((c) => c.name.toLowerCase().includes(q));
   }, [categories, input]);
+
+  // Open the combobox dropdown and measure its position (fixed positioning avoids panel clipping)
+  const openList = useCallback(() => {
+    const el = inputWrapRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    }
+    setListOpen(true);
+  }, []);
 
   const toggleTag = useCallback(
     (catId: string) => {
@@ -96,7 +108,16 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
   // Click outside the whole panel (overlay) or Escape closes
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) onClose();
+      if (!panelRef.current) return;
+      const inside = panelRef.current.contains(e.target as Node);
+      if (!inside) {
+        onClose();
+        return;
+      }
+      // Clicked inside the panel but outside the combobox → dismiss the dropdown
+      if (listOpen && comboRef.current && !comboRef.current.contains(e.target as Node)) {
+        setListOpen(false);
+      }
     };
     const keyHandler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -107,19 +128,7 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
       document.removeEventListener("mousedown", handler);
       document.removeEventListener("keydown", keyHandler);
     };
-  }, [onClose]);
-
-  // Close combobox dropdown on outside click
-  useEffect(() => {
-    if (!listOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (comboRef.current && !comboRef.current.contains(e.target as Node)) {
-        setListOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [listOpen]);
+  }, [onClose, listOpen]);
 
   // Rename dialog close
   useEffect(() => {
@@ -155,8 +164,8 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {/* ── Combobox: input + selected chips + filtered dropdown ── */}
-          <div className="relative" ref={comboRef}>
-            <div className="flex items-center gap-1.5 flex-wrap border border-slate-600 rounded bg-slate-900 px-2 py-1.5
+          <div className="relative" ref={comboRef} onMouseDown={(e) => e.stopPropagation()}>
+            <div ref={inputWrapRef} className="flex items-center gap-1.5 flex-wrap border border-slate-600 rounded bg-slate-900 px-2 py-1.5
                             focus-within:border-blue-500 transition-colors">
               {current.map((cid) => {
                 const c = categories.find((x) => x.id === cid);
@@ -186,8 +195,8 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
               })}
               <input
                 value={input}
-                onChange={(e) => { setInput(e.target.value); setListOpen(true); }}
-                onFocus={() => setListOpen(true)}
+                onChange={(e) => { setInput(e.target.value); openList(); }}
+                onFocus={openList}
                 onKeyDown={(e) => {
                   if (e.key === "Escape") setListOpen(false);
                 }}
@@ -196,8 +205,12 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
               />
             </div>
 
-            {listOpen && (
-              <div className="absolute left-0 right-0 top-full mt-1 bg-slate-800 border border-slate-600 rounded shadow-xl py-1 z-20 max-h-52 overflow-y-auto">
+            {listOpen && dropdownPos && (
+              <div
+                className="fixed bg-slate-800 border border-slate-600 rounded shadow-xl py-1 z-[200] max-h-56 overflow-y-auto"
+                style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
                 {filtered.length === 0 ? (
                   <p className="text-xs text-slate-500 px-3 py-2">无匹配标签</p>
                 ) : (
