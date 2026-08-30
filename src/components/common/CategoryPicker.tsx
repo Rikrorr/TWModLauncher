@@ -8,10 +8,9 @@ interface Props {
 }
 
 /**
- * Tag manager window — same modal shell & interaction as AddModPanel
- * (fixed overlay + centered panel with header / content / footer).
- * Left: checkbox the current mod's tags. Right: manage tags (dropdown input,
- * native color picker, create / rename / recolor / delete).
+ * Tag manager window — AddModPanel-style modal shell with a combobox:
+ * one text input doubles as tag selection (filtered dropdown, checkbox toggle)
+ * and tag creation (new name + native color picker).
  */
 export default function CategoryPicker({ modKey, title, onClose }: Props) {
   const categories = useCategoryStore((s) => s.categories);
@@ -27,18 +26,23 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
   const [color, setColor] = useState("#3b82f6");
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  // dropdown for selecting the current mod's tags
-  const [selectOpen, setSelectOpen] = useState(false);
-  const selectRef = useRef<HTMLDivElement>(null);
+  const [listOpen, setListOpen] = useState(false);
+  const comboRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const renameRef = useRef<HTMLDivElement>(null);
 
+  // Exact match of input → the tag being managed (recolor/rename/delete)
   const matched = useMemo(() => {
     const t = input.trim();
     return categories.find((c) => c.name === t) ?? null;
   }, [categories, input]);
 
-  const selectedTag = matched;
+  // Filtered list for the combobox dropdown (substring match)
+  const filtered = useMemo(() => {
+    const q = input.trim().toLowerCase();
+    if (!q) return categories;
+    return categories.filter((c) => c.name.toLowerCase().includes(q));
+  }, [categories, input]);
 
   const toggleTag = useCallback(
     (catId: string) => {
@@ -89,6 +93,7 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
     }
   };
 
+  // Click outside the whole panel (overlay) or Escape closes
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) onClose();
@@ -104,31 +109,23 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
     };
   }, [onClose]);
 
-  // Close the tag dropdown on outside click / Escape
+  // Close combobox dropdown on outside click
   useEffect(() => {
-    if (!selectOpen) return;
+    if (!listOpen) return;
     const handler = (e: MouseEvent) => {
-      if (selectRef.current && !selectRef.current.contains(e.target as Node)) {
-        setSelectOpen(false);
+      if (comboRef.current && !comboRef.current.contains(e.target as Node)) {
+        setListOpen(false);
       }
     };
-    const keyHandler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSelectOpen(false);
-    };
     document.addEventListener("mousedown", handler);
-    document.addEventListener("keydown", keyHandler);
-    return () => {
-      document.removeEventListener("mousedown", handler);
-      document.removeEventListener("keydown", keyHandler);
-    };
-  }, [selectOpen]);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [listOpen]);
 
+  // Rename dialog close
   useEffect(() => {
     if (!renameOpen) return;
     const handler = (e: MouseEvent) => {
-      if (renameRef.current && !renameRef.current.contains(e.target as Node)) {
-        setRenameOpen(false);
-      }
+      if (renameRef.current && !renameRef.current.contains(e.target as Node)) setRenameOpen(false);
     };
     const keyHandler = (e: KeyboardEvent) => {
       if (e.key === "Escape") setRenameOpen(false);
@@ -146,147 +143,135 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
       <div
         ref={panelRef}
         className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl
-                   w-[760px] max-w-[95vw] max-h-[85vh] flex flex-col"
+                   w-[560px] max-w-[95vw] max-h-[85vh] flex flex-col"
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
           <h2 className="text-sm font-semibold text-slate-200 truncate">标签: {title}</h2>
-          <span className="text-[10px] text-slate-500 hidden sm:inline">勾选当前 Mod 标签 · 管理自定义标签</span>
+          <span className="text-[10px] text-slate-500 hidden sm:inline">输入过滤选择 · 新建标签</span>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-300 cursor-pointer text-lg leading-none">
             ×
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto flex min-h-0">
-          <div className="w-1/2 border-r border-slate-700 p-4">
-            <p className="text-xs text-slate-400 mb-2">当前 Mod 标签</p>
-            <div className="relative" ref={selectRef}>
-              <button
-                onClick={() => setSelectOpen((v) => !v)}
-                className="w-full text-xs px-2.5 py-1.5 bg-slate-900 border border-slate-600 rounded text-slate-200 cursor-pointer flex items-center justify-between gap-2"
-              >
-                <span className="truncate">
-                  {current.length === 0
-                    ? "选择标签..."
-                    : categories
-                        .filter((c) => current.includes(c.id))
-                        .map((c) => c.name)
-                        .join("、")}
-                </span>
-                <svg className="w-3 h-3 text-slate-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {selectOpen && (
-                <div className="absolute left-0 right-0 top-full mt-1 bg-slate-800 border border-slate-600 rounded shadow-xl py-1 z-20 max-h-48 overflow-y-auto">
-                  {categories.length === 0 ? (
-                    <p className="text-xs text-slate-600 px-3 py-2">暂无自定义标签</p>
-                  ) : (
-                    categories.map((c) => {
-                      const checked = current.includes(c.id);
-                      return (
-                        <label
-                          key={c.id}
-                          className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-700/60 cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleTag(c.id)}
-                            className="accent-blue-500"
-                          />
-                          <span
-                            className="w-3 h-3 rounded-full shrink-0"
-                            style={{ background: c.color ?? "#3b82f6" }}
-                          />
-                          <span className={`text-xs flex-1 truncate ${checked ? "text-slate-200" : "text-slate-400"}`}>
-                            {c.name}
-                          </span>
-                        </label>
-                      );
-                    })
-                  )}
-                </div>
-              )}
-            </div>
-            </div>
-          <div className="flex-1 p-4">
-            <p className="text-xs text-slate-400 mb-2">管理标签（输入或选择已有标签）</p>
-            <input
-              list="tag-options"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="输入新标签名或选择已有标签..."
-              className="w-full text-xs px-2.5 py-1.5 bg-slate-900 border border-slate-600 rounded
-                         text-slate-200 outline-none focus:border-blue-500 mb-3"
-            />
-            <datalist id="tag-options">
-              {categories.map((c) => (
-                <option key={c.id} value={c.name} />
-              ))}
-            </datalist>
-
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs text-slate-400 shrink-0">颜色:</span>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {/* ── Combobox: input + selected chips + filtered dropdown ── */}
+          <div className="relative" ref={comboRef}>
+            <div className="flex items-center gap-1.5 flex-wrap border border-slate-600 rounded bg-slate-900 px-2 py-1.5
+                            focus-within:border-blue-500 transition-colors">
+              {current.map((cid) => {
+                const c = categories.find((x) => x.id === cid);
+                if (!c) return null;
+                return (
+                  <span
+                    key={cid}
+                    className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded
+                               border text-slate-200"
+                    style={{
+                      color: c.color ?? "#a855f7",
+                      borderColor: (c.color ?? "#a855f7") + "66",
+                      background: (c.color ?? "#a855f7") + "1a",
+                    }}
+                  >
+                    <span className="w-2 h-2 rounded-full" style={{ background: c.color ?? "#a855f7" }} />
+                    {c.name}
+                    <button
+                      onClick={() => toggleTag(cid)}
+                      className="ml-0.5 text-slate-400 hover:text-white cursor-pointer"
+                      title="移除标签"
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
               <input
-                type="color"
-                value={matched?.color ?? color}
-                onChange={(e) => changeColor(e.target.value)}
-                className="w-8 h-7 rounded cursor-pointer bg-transparent border border-slate-600"
+                value={input}
+                onChange={(e) => { setInput(e.target.value); setListOpen(true); }}
+                onFocus={() => setListOpen(true)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setListOpen(false);
+                }}
+                placeholder={current.length === 0 ? "输入或选择标签..." : ""}
+                className="flex-1 min-w-24 bg-transparent text-xs text-slate-200 outline-none placeholder-slate-500"
               />
-              <span className="text-[10px] text-slate-500 font-mono">
-                {matched?.color ?? color}
-              </span>
             </div>
 
-            {selectedTag ? (
-              <div className="flex items-center gap-2 text-xs text-slate-300 bg-slate-700/50 rounded px-2 py-1.5 mb-3">
-                <span
-                  className="w-3 h-3 rounded-full shrink-0"
-                  style={{ background: selectedTag.color ?? "#3b82f6" }}
-                />
-                <span className="truncate flex-1">{selectedTag.name}</span>
-                <button
-                  onClick={openRename}
-                  className="text-[10px] px-2 py-0.5 bg-amber-600 hover:bg-amber-500 text-white rounded cursor-pointer shrink-0"
-                >
-                  重命名
-                </button>
-                <button
-                  onClick={() => {
-                    deleteCategory(selectedTag.id);
-                    persistCategories(useCategoryStore.getState());
-                    setInput("");
-                  }}
-                  title="删除此标签"
-                  className="text-[10px] px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded cursor-pointer shrink-0"
-                >
-                  删除
-                </button>
-              </div>
-            ) : (
-              <div className="text-[10px] text-slate-600 mb-3">
-                {input.trim() ? "输入内容与已有标签不同 → 点击下方「新建」创建" : "选择已有标签进行重命名/改色/删除，或输入新名称新建"}
+            {listOpen && (
+              <div className="absolute left-0 right-0 top-full mt-1 bg-slate-800 border border-slate-600 rounded shadow-xl py-1 z-20 max-h-52 overflow-y-auto">
+                {filtered.length === 0 ? (
+                  <p className="text-xs text-slate-500 px-3 py-2">无匹配标签</p>
+                ) : (
+                  filtered.map((c) => {
+                    const checked = current.includes(c.id);
+                    return (
+                      <label
+                        key={c.id}
+                        className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-700/60 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleTag(c.id)}
+                          className="accent-blue-500"
+                        />
+                        <span
+                          className="w-3 h-3 rounded-full shrink-0"
+                          style={{ background: c.color ?? "#3b82f6" }}
+                        />
+                        <span className={`text-xs flex-1 truncate ${checked ? "text-slate-200" : "text-slate-400"}`}>
+                          {c.name}
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+                <div className="border-t border-slate-700 mt-1 pt-1">
+                  {matched ? (
+                    <div className="flex items-center gap-2 px-3 py-1">
+                      <span className="text-xs text-slate-400 truncate flex-1">{matched.name}</span>
+                      <button
+                        onClick={() => { openRename(); setListOpen(false); }}
+                        className="text-[10px] px-2 py-0.5 bg-amber-600 hover:bg-amber-500 text-white rounded cursor-pointer shrink-0"
+                      >
+                        重命名
+                      </button>
+                      <button
+                        onClick={() => {
+                          deleteCategory(matched.id);
+                          persistCategories(useCategoryStore.getState());
+                          setInput("");
+                        }}
+                        className="text-[10px] px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded cursor-pointer shrink-0"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  ) : input.trim() ? (
+                    <button
+                      onClick={() => { handleCreate(); setListOpen(false); }}
+                      className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-slate-700/70 transition-colors"
+                    >
+                      + 新建「{input.trim()}」
+                    </button>
+                  ) : null}
+                </div>
               </div>
             )}
+          </div>
 
-            <div className="flex justify-end">
-              {matched ? (
-                <button
-                  onClick={openRename}
-                  className="text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded cursor-pointer"
-                >
-                  重命名
-                </button>
-              ) : (
-                <button
-                  onClick={handleCreate}
-                  disabled={!input.trim()}
-                  className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded cursor-pointer"
-                >
-                  新建
-                </button>
-              )}
-            </div>
+          {/* ── Color picker ── */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 shrink-0">颜色:</span>
+            <input
+              type="color"
+              value={matched?.color ?? color}
+              onChange={(e) => changeColor(e.target.value)}
+              className="w-8 h-7 rounded cursor-pointer bg-transparent border border-slate-600"
+            />
+            <span className="text-[10px] text-slate-500 font-mono">{matched?.color ?? color}</span>
+            {matched && (
+              <span className="text-[10px] text-slate-500 ml-auto">正在管理「{matched.name}」</span>
+            )}
           </div>
         </div>
 
@@ -317,9 +302,7 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
           className="fixed z-[160] bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-4 w-72"
           style={{ left: "50%", top: "50%", transform: "translate(-50%, -50%)" }}
         >
-          <p className="text-xs font-medium text-slate-200 mb-2">
-            重命名标签「{matched.name}」
-          </p>
+          <p className="text-xs font-medium text-slate-200 mb-2">重命名标签「{matched.name}」</p>
           <input
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
