@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useCategoryStore, persistCategories } from "../../store/useCategoryStore";
 
 interface Props {
@@ -9,10 +8,10 @@ interface Props {
 }
 
 /**
- * Tag manager window — AddModPanel-style modal shell with a combobox.
- * The dropdown is rendered via createPortal to document.body so it is never
- * clipped by the panel's overflow/transform; clicking elsewhere in the panel
- * dismisses both the dropdown and the text input focus.
+ * Tag manager window — plan C: mirrors the AddModPanel interaction.
+ * Top search box filters the tag list; each row = checkbox (select for this mod)
+ * + color dot + name + inline actions (recolor / rename / delete);
+ * bottom has an explicit "+ 新建标签" button (small dialog: name + color picker).
  */
 export default function CategoryPicker({ modKey, title, onClose }: Props) {
   const categories = useCategoryStore((s) => s.categories);
@@ -24,43 +23,24 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
 
   const current = useMemo(() => modCats[modKey] ?? [], [modCats, modKey]);
 
-  const [input, setInput] = useState("");
-  const [color, setColor] = useState("#3b82f6");
-  const [renameOpen, setRenameOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  // Create dialog state (explicit, not hidden in a combobox)
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createColor, setCreateColor] = useState("#3b82f6");
+  // Rename dialog state
+  const [renameTarget, setRenameTarget] = useState<{ id: string; name: string } | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [listOpen, setListOpen] = useState(false);
-  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
-  const comboRef = useRef<HTMLDivElement>(null);
-  const inputWrapRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+
   const panelRef = useRef<HTMLDivElement>(null);
-  const renameRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
-  const matched = useMemo(() => {
-    const t = input.trim();
-    return categories.find((c) => c.name === t) ?? null;
-  }, [categories, input]);
-
+  // Filtered tag list by search
   const filtered = useMemo(() => {
-    const q = input.trim().toLowerCase();
+    const q = search.trim().toLowerCase();
     if (!q) return categories;
     return categories.filter((c) => c.name.toLowerCase().includes(q));
-  }, [categories, input]);
-
-  // Open the dropdown: measure the input wrapper position for the portal
-  const openList = useCallback(() => {
-    const el = inputWrapRef.current;
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
-    }
-    setListOpen(true);
-  }, []);
-
-  const dismissInput = useCallback(() => {
-    setListOpen(false);
-    inputRef.current?.blur();
-  }, []);
+  }, [categories, search]);
 
   const toggleTag = useCallback(
     (catId: string) => {
@@ -73,57 +53,54 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
     [current, modKey, setModCategories],
   );
 
-  const handleCreate = () => {
-    const name = input.trim();
-    if (!name) return;
-    addCategory(name, color);
-    setInput("");
-    persistCategories(useCategoryStore.getState());
+  const openCreate = () => {
+    setCreateName("");
+    setCreateColor("#3b82f6");
+    setCreateOpen(true);
   };
 
-  const openRename = () => {
-    if (!matched) return;
-    setRenameValue(matched.name);
-    setRenameOpen(true);
+  const confirmCreate = () => {
+    const name = createName.trim();
+    if (!name) return;
+    addCategory(name, createColor);
+    persistCategories(useCategoryStore.getState());
+    setCreateOpen(false);
+  };
+
+  const openRename = (catId: string, catName: string) => {
+    setRenameTarget({ id: catId, name: catName });
+    setRenameValue(catName);
   };
 
   const confirmRename = () => {
-    if (!matched) return;
+    if (!renameTarget) return;
     const next = renameValue.trim();
-    if (next && next !== matched.name) {
-      renameCategory(matched.id, next);
-      persistCategories(useCategoryStore.getState());
-      setInput(next);
-    }
-    setRenameOpen(false);
-  };
-
-  const changeColor = (c: string) => {
-    setColor(c);
-    if (matched) {
-      const state = useCategoryStore.getState();
-      useCategoryStore.setState({
-        categories: state.categories.map((cat) =>
-          cat.id === matched.id ? { ...cat, color: c } : cat,
-        ),
-      });
+    if (next && next !== renameTarget.name) {
+      renameCategory(renameTarget.id, next);
       persistCategories(useCategoryStore.getState());
     }
+    setRenameTarget(null);
   };
 
-  // Click outside the panel closes the window; click inside but outside the
-  // combobox dismisses the dropdown + input focus (cancel typing state).
+  const setTagColor = (catId: string, color: string) => {
+    const state = useCategoryStore.getState();
+    useCategoryStore.setState({
+      categories: state.categories.map((cat) =>
+        cat.id === catId ? { ...cat, color } : cat,
+      ),
+    });
+    persistCategories(useCategoryStore.getState());
+  };
+
+  const removeTag = (catId: string) => {
+    deleteCategory(catId);
+    persistCategories(useCategoryStore.getState());
+  };
+
+  // Click outside panel closes; Escape closes
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (!panelRef.current) return;
-      const inside = panelRef.current.contains(e.target as Node);
-      if (!inside) {
-        onClose();
-        return;
-      }
-      if (listOpen && comboRef.current && !comboRef.current.contains(e.target as Node)) {
-        dismissInput();
-      }
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) onClose();
     };
     const keyHandler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -134,16 +111,22 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
       document.removeEventListener("mousedown", handler);
       document.removeEventListener("keydown", keyHandler);
     };
-  }, [onClose, listOpen, dismissInput]);
+  }, [onClose]);
 
-  // Rename dialog close
+  // Dialogs close on outside click / Escape
   useEffect(() => {
-    if (!renameOpen) return;
+    if (!createOpen && !renameTarget) return;
     const handler = (e: MouseEvent) => {
-      if (renameRef.current && !renameRef.current.contains(e.target as Node)) setRenameOpen(false);
+      if (dialogRef.current && !dialogRef.current.contains(e.target as Node)) {
+        setCreateOpen(false);
+        setRenameTarget(null);
+      }
     };
     const keyHandler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setRenameOpen(false);
+      if (e.key === "Escape") {
+        setCreateOpen(false);
+        setRenameTarget(null);
+      }
     };
     document.addEventListener("mousedown", handler);
     document.addEventListener("keydown", keyHandler);
@@ -151,87 +134,110 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
       document.removeEventListener("mousedown", handler);
       document.removeEventListener("keydown", keyHandler);
     };
-  }, [renameOpen]);
+  }, [createOpen, renameTarget]);
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60">
       <div
         ref={panelRef}
         className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl
-                   w-[560px] max-w-[95vw] max-h-[85vh] flex flex-col"
+                   w-[640px] max-w-[95vw] max-h-[85vh] flex flex-col"
       >
+        {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
           <h2 className="text-sm font-semibold text-slate-200 truncate">标签: {title}</h2>
-          <span className="text-[10px] text-slate-500 hidden sm:inline">输入过滤选择 · 新建标签</span>
+          <span className="text-[10px] text-slate-500 hidden sm:inline">
+            勾选应用标签 · 行尾管理
+          </span>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-300 cursor-pointer text-lg leading-none">
             ×
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          <div className="relative" ref={comboRef} onMouseDown={(e) => e.stopPropagation()}>
-            <div
-              ref={inputWrapRef}
-              className="flex items-center gap-1.5 flex-wrap border border-slate-600 rounded bg-slate-900 px-2 py-1.5
-                          focus-within:border-blue-500 transition-colors"
-            >
-              {current.map((cid) => {
-                const c = categories.find((x) => x.id === cid);
-                if (!c) return null;
-                return (
-                  <span
-                    key={cid}
-                    className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border text-slate-200"
-                    style={{
-                      color: c.color ?? "#a855f7",
-                      borderColor: (c.color ?? "#a855f7") + "66",
-                      background: (c.color ?? "#a855f7") + "1a",
-                    }}
-                  >
-                    <span className="w-2 h-2 rounded-full" style={{ background: c.color ?? "#a855f7" }} />
-                    {c.name}
-                    <button
-                      onClick={() => toggleTag(cid)}
-                      className="ml-0.5 text-slate-400 hover:text-white cursor-pointer"
-                      title="移除标签"
-                    >
-                      ×
-                    </button>
-                  </span>
-                );
-              })}
-              <input
-                ref={inputRef}
-                value={input}
-                onChange={(e) => { setInput(e.target.value); openList(); }}
-                onFocus={openList}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") dismissInput();
-                }}
-                placeholder={current.length === 0 ? "输入或选择标签..." : ""}
-                className="flex-1 min-w-24 bg-transparent text-xs text-slate-200 outline-none placeholder-slate-500"
-              />
-            </div>
+        {/* Search + tag list */}
+        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+          <div className="px-4 pt-3 pb-2 shrink-0">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索标签..."
+              className="w-full text-xs px-2.5 py-1.5 bg-slate-900 border border-slate-600 rounded
+                         text-slate-200 outline-none focus:border-blue-500"
+            />
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400 shrink-0">颜色:</span>
-            <input
-              type="color"
-              value={matched?.color ?? color}
-              onChange={(e) => changeColor(e.target.value)}
-              className="w-8 h-7 rounded cursor-pointer bg-transparent border border-slate-600"
-            />
-            <span className="text-[10px] text-slate-500 font-mono">{matched?.color ?? color}</span>
-            {matched && (
-              <span className="text-[10px] text-slate-500 ml-auto">正在管理「{matched.name}」</span>
+          <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-0.5">
+            {filtered.length === 0 ? (
+              <p className="text-xs text-slate-500 text-center py-8">
+                {categories.length === 0 ? "暂无标签" : "无匹配标签"}
+              </p>
+            ) : (
+              filtered.map((c) => {
+                const checked = current.includes(c.id);
+                return (
+                  <div
+                    key={c.id}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-700/50 ${
+                      checked ? "bg-blue-950/30" : ""
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleTag(c.id)}
+                      className="accent-blue-500 shrink-0"
+                    />
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ background: c.color ?? "#3b82f6" }}
+                    />
+                    <span className={`text-xs flex-1 truncate ${checked ? "text-slate-100" : "text-slate-300"}`}>
+                      {c.name}
+                    </span>
+                    {/* Inline actions */}
+                    <label
+                      className="relative shrink-0 cursor-pointer"
+                      title="改色"
+                    >
+                      <input
+                        type="color"
+                        value={c.color ?? "#3b82f6"}
+                        onChange={(e) => setTagColor(c.id, e.target.value)}
+                        className="w-0 h-0 opacity-0 absolute"
+                      />
+                      <span className="text-[10px] text-slate-500 hover:text-slate-200">🎨</span>
+                    </label>
+                    <button
+                      onClick={() => openRename(c.id, c.name)}
+                      title="重命名"
+                      className="text-[10px] px-1.5 py-0.5 text-slate-500 hover:text-amber-300 rounded cursor-pointer shrink-0"
+                    >
+                      改名
+                    </button>
+                    <button
+                      onClick={() => removeTag(c.id)}
+                      title="删除"
+                      className="text-[10px] px-1.5 py-0.5 text-slate-500 hover:text-red-400 rounded cursor-pointer shrink-0"
+                    >
+                      删除
+                    </button>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
 
+        {/* Footer: new-tag button + cancel/done */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-slate-700 shrink-0">
-          <span className="text-xs text-slate-500">已选 {current.length} 个标签</span>
-          <div className="flex gap-2">
+          <button
+            onClick={openCreate}
+            className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded cursor-pointer"
+          >
+            + 新建标签
+          </button>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-500">已选 {current.length} 个</span>
             <button
               onClick={onClose}
               className="text-xs px-3 py-1.5 border border-slate-600 text-slate-300 rounded cursor-pointer"
@@ -248,101 +254,61 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
         </div>
       </div>
 
-      {/* Dropdown rendered to document.body — never clipped by the panel */}
-      {listOpen && dropdownPos &&
-        createPortal(
-          <div
-            className="fixed bg-slate-800 border border-slate-600 rounded shadow-xl py-1 z-[300] max-h-56 overflow-y-auto"
-            style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            {filtered.length === 0 ? (
-              <p className="text-xs text-slate-500 px-3 py-2">无匹配标签</p>
-            ) : (
-              filtered.map((c) => {
-                const checked = current.includes(c.id);
-                return (
-                  <label
-                    key={c.id}
-                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-700/60 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleTag(c.id)}
-                      className="accent-blue-500"
-                    />
-                    <span
-                      className="w-3 h-3 rounded-full shrink-0"
-                      style={{ background: c.color ?? "#3b82f6" }}
-                    />
-                    <span className={`text-xs flex-1 truncate ${checked ? "text-slate-200" : "text-slate-400"}`}>
-                      {c.name}
-                    </span>
-                  </label>
-                );
-              })
-            )}
-            <div className="border-t border-slate-700 mt-1 pt-1">
-              {matched ? (
-                <div className="flex items-center gap-2 px-3 py-1">
-                  <span className="text-xs text-slate-400 truncate flex-1">{matched.name}</span>
-                  <button
-                    onClick={() => { openRename(); setListOpen(false); }}
-                    className="text-[10px] px-2 py-0.5 bg-amber-600 hover:bg-amber-500 text-white rounded cursor-pointer shrink-0"
-                  >
-                    重命名
-                  </button>
-                  <button
-                    onClick={() => {
-                      deleteCategory(matched.id);
-                      persistCategories(useCategoryStore.getState());
-                      setInput("");
-                    }}
-                    className="text-[10px] px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded cursor-pointer shrink-0"
-                  >
-                    删除
-                  </button>
-                </div>
-              ) : input.trim() ? (
-                <button
-                  onClick={() => { handleCreate(); setListOpen(false); }}
-                  className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-slate-700/70 transition-colors"
-                >
-                  + 新建「{input.trim()}」
-                </button>
-              ) : null}
-            </div>
-          </div>,
-          document.body,
-        )}
-
-      {renameOpen && matched && (
+      {/* Create / rename dialog (shared) */}
+      {(createOpen || renameTarget) && (
         <div
-          ref={renameRef}
-          className="fixed z-[400] bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-4 w-72"
+          ref={dialogRef}
+          className="fixed z-[400] bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-4 w-80"
           style={{ left: "50%", top: "50%", transform: "translate(-50%, -50%)" }}
         >
-          <p className="text-xs font-medium text-slate-200 mb-2">重命名标签「{matched.name}」</p>
+          <p className="text-xs font-medium text-slate-200 mb-2">
+            {createOpen ? "新建标签" : `重命名「${renameTarget!.name}」`}
+          </p>
           <input
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && confirmRename()}
+            value={createOpen ? createName : renameValue}
+            onChange={(e) =>
+              createOpen ? setCreateName(e.target.value) : setRenameValue(e.target.value)
+            }
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                if (createOpen) confirmCreate();
+                else confirmRename();
+              }
+            }}
             autoFocus
+            placeholder="标签名称..."
             className="w-full text-xs px-2 py-1.5 bg-slate-700 border border-slate-600 rounded
                        text-slate-200 outline-none focus:border-blue-500 mb-3"
           />
+          {createOpen && (
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs text-slate-400 shrink-0">颜色:</span>
+              <input
+                type="color"
+                value={createColor}
+                onChange={(e) => setCreateColor(e.target.value)}
+                className="w-8 h-7 rounded cursor-pointer bg-transparent border border-slate-600"
+              />
+              <span className="text-[10px] text-slate-500 font-mono">{createColor}</span>
+            </div>
+          )}
           <div className="flex justify-end gap-2">
             <button
-              onClick={() => setRenameOpen(false)}
+              onClick={() => {
+                setCreateOpen(false);
+                setRenameTarget(null);
+              }}
               className="text-xs px-3 py-1 border border-slate-600 text-slate-300 rounded cursor-pointer"
             >
               取消
             </button>
             <button
-              onClick={confirmRename}
-              disabled={!renameValue.trim()}
-              className="text-xs px-3 py-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded cursor-pointer"
+              onClick={() => {
+                if (createOpen) confirmCreate();
+                else confirmRename();
+              }}
+              disabled={createOpen ? !createName.trim() : !renameValue.trim()}
+              className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded cursor-pointer"
             >
               确认
             </button>
