@@ -33,6 +33,9 @@ interface Props {
   modTitles?: Record<string, string>;
   /** ★ hide toggle & order controls (browse-only list, e.g. ModsPage). */
   hideToggleAndOrder?: boolean;
+  /** ★ render the card without enabled/disabled visual differentiation
+   *  (pool/browse pages like ModsPage, CollectionsPage, AddModPanel). */
+  hideEnabledState?: boolean;
 }
 
 const INTERACTIVE_SELECTOR = "button, input, label, select, [data-no-drag]";
@@ -57,8 +60,12 @@ export default function ModCard({
   conflicts,
   modTitles,
   hideToggleAndOrder,
+  hideEnabledState,
 }: Props) {
   const [localOrder, setLocalOrder] = useState(mod.order);
+  // ★ hideEnabledState: pool/browse pages show cards uniformly regardless of
+  // enabled/disabled — only the visual classes differ, the data stays intact.
+  const displayEnabled = hideEnabledState ? true : mod.enabled;
   // ★ v2: category/note popups + store reads
   const [catPickerOpen, setCatPickerOpen] = useState(false);
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
@@ -133,7 +140,7 @@ export default function ModCard({
         onDoubleClick={handleDoubleClick}
         onMouseDown={handleMouseDown}
         className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 transition-colors hover:border-slate-500 cursor-pointer ${
-          mod.enabled
+          displayEnabled
             ? "border-slate-600 bg-slate-800/80"
             : "border-slate-700/50 bg-slate-800/40 opacity-70"
         } ${mod.parseError ? "border-red-800 bg-red-950/20" : ""} ${
@@ -145,7 +152,7 @@ export default function ModCard({
         {/* 1. Name */}
         <h3
           className={`font-semibold text-xs truncate min-w-0 shrink-0 ${
-            mod.enabled ? "text-slate-100" : "text-slate-400"
+            displayEnabled ? "text-slate-100" : "text-slate-400"
           }`}
           title={mod.title}
           style={{ maxWidth: 200 }}
@@ -287,7 +294,7 @@ export default function ModCard({
       onDoubleClick={handleDoubleClick}
       onMouseDown={handleMouseDown}
       className={`flex items-start gap-4 rounded-lg border p-4 transition-colors hover:border-slate-500 cursor-pointer ${
-        mod.enabled
+        displayEnabled
           ? "border-slate-600 bg-slate-800/80"
           : "border-slate-700/50 bg-slate-800/40 opacity-70"
       } ${mod.parseError ? "border-red-800 bg-red-950/20" : ""} ${
@@ -320,7 +327,7 @@ export default function ModCard({
         <div className="flex items-center gap-2 flex-wrap">
           <h3
             className={`font-semibold text-sm truncate max-w-44 ${
-              mod.enabled ? "text-slate-100" : "text-slate-400"
+              displayEnabled ? "text-slate-100" : "text-slate-400"
             }`}
             title={mod.title}
           >

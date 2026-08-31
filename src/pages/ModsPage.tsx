@@ -118,6 +118,7 @@ export default function ModsPage({
           onSelectMod={onSelectMod}
           onSaveSelectionAsCollection={onSaveSelectionAsCollection}
           readOnly
+          hideEnabledState
           modMenu={{
             schemes: profiles,
             collections,

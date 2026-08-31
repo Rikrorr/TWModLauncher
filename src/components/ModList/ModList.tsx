@@ -38,6 +38,9 @@ interface Props {
   onSaveSelectionAsCollection?: () => void;
   /** ★ v3: read-only browse mode (ModsPage) — toggle/order/apply-order disabled */
   readOnly?: boolean;
+  /** ★ v2.1: render cards without enabled/disabled visual differentiation
+   *  (pool/browse pages — ModsPage, CollectionsPage, AddModPanel). */
+  hideEnabledState?: boolean;
   /** ★ v3: when provided, mod context menu uses ModActionMenu (加入/新建 two-level) */
   modMenu?: {
     schemes: { name: string; modCount?: number }[];
@@ -72,7 +75,7 @@ interface Props {
   };
 }
 
-export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollection, modMenu, readOnly, controlled }: Props) {
+export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollection, modMenu, readOnly, hideEnabledState, controlled }: Props) {
   // ── Data source: global stores (always called unconditionally) or controlled
   //    container (scheme/collection). Hooks must be unconditional — values are
   //    overridden below when controlled.
@@ -1019,6 +1022,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
                       conflicts={conflictMap.get(item.key)}
                       modTitles={modTitles}
                       hideToggleAndOrder={readOnly}
+                      hideEnabledState={hideEnabledState}
                     />
                   </div>
                 </div>

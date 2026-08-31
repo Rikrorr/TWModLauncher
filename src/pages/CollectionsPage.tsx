@@ -249,6 +249,7 @@ export default function CollectionsPage({
           <ModList
             saving={false}
             onSelectMod={(key) => setConfigModKey(key)}
+            hideEnabledState
             controlled={{
               mods: memberMods,
               groups: sessionGroups,

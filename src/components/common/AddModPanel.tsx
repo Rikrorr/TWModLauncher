@@ -181,6 +181,7 @@ export default function AddModPanel({ mods, existingKeys, targetLabel, onAdd, on
                     isSelected={isSelected}
                     viewMode={filter.viewMode}
                     hideToggleAndOrder
+                    hideEnabledState
                   />
                 </div>
               );
