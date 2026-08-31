@@ -33,6 +33,8 @@ interface Props {
   modTitles?: Record<string, string>;
   /** ★ hide toggle & order controls (browse-only list, e.g. ModsPage). */
   hideToggleAndOrder?: boolean;
+  /** ★ hide only the enable/disable switch (e.g. CollectionsPage — no enable semantics). */
+  hideToggle?: boolean;
   /** ★ render the card without enabled/disabled visual differentiation
    *  (pool/browse pages like ModsPage, CollectionsPage, AddModPanel). */
   hideEnabledState?: boolean;
@@ -60,6 +62,7 @@ export default function ModCard({
   conflicts,
   modTitles,
   hideToggleAndOrder,
+  hideToggle,
   hideEnabledState,
 }: Props) {
   const [localOrder, setLocalOrder] = useState(mod.order);
@@ -266,7 +269,8 @@ export default function ModCard({
           </button>
         </div>
 
-        {/* 9. Toggle */}
+        {/* 9. Toggle — hidden when hideToggle (collections: no enable semantics) */}
+        {!hideToggle && (
         <label
           onClick={(e) => e.stopPropagation()}
           className={`relative inline-flex items-center shrink-0 ${
@@ -282,6 +286,7 @@ export default function ModCard({
           />
           <div className="w-9 h-5 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
         </label>
+        )}
           </>
         )}
       </div>
@@ -484,7 +489,8 @@ export default function ModCard({
       <div className="flex flex-col items-center gap-3 shrink-0">
         {!hideToggleAndOrder && (
           <>
-        {/* Enable toggle */}
+        {/* Enable toggle — hidden when hideToggle (collections: no enable semantics) */}
+        {!hideToggle && (
         <label
           onClick={(e) => e.stopPropagation()}
           className={`relative inline-flex items-center ${
@@ -500,6 +506,7 @@ export default function ModCard({
           />
           <div className="w-9 h-5 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600" />
         </label>
+        )}
 
         {/* Order controls */}
         <div className="flex flex-col items-center gap-0.5">
