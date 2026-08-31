@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export interface ContainerOption {
   key: string;
@@ -19,7 +20,11 @@ interface Props {
   headerAction?: React.ReactNode;
 }
 
-/** Dropdown container selector — pick scheme/collection; delete lives inside the dropdown. */
+const PANEL_W = 288;
+
+/** Dropdown container selector — pick scheme/collection; delete lives inside the dropdown.
+ *  The option panel is portaled to document.body (fixed, positioned from the button rect)
+ *  so it is never clipped by overflow-hidden ancestors, following the ContextMenu pattern. */
 export default function ContainerSelect({
   placeholder,
   options,
@@ -29,14 +34,69 @@ export default function ContainerSelect({
   headerAction,
 }: Props) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; up: boolean } | null>(null);
 
   const selected = options.find((o) => o.key === selectedKey) ?? null;
 
+  const openMenu = () => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({
+      left: Math.min(r.left, Math.max(8, window.innerWidth - PANEL_W - 8)),
+      top: r.bottom + 4,
+      up: false,
+    });
+    setOpen(true);
+  };
+
+  // Reposition while open (scroll / resize) so the panel stays pinned to the button.
+  useEffect(() => {
+    if (!open) return;
+    const update = () => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setPos((prev) =>
+        prev
+          ? {
+              left: Math.min(r.left, Math.max(8, window.innerWidth - PANEL_W - 8)),
+              top: r.bottom + 4,
+              up: false,
+            }
+          : prev,
+      );
+    };
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [open]);
+
+  // Flip upward when the panel would overflow the viewport bottom.
+  useEffect(() => {
+    if (!open || !pos || !panelRef.current) return;
+    const pr = panelRef.current.getBoundingClientRect();
+    if (pr.bottom > window.innerHeight - 8) {
+      const el = wrapRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        setPos((p) => (p ? { ...p, top: r.top - 4 - pr.height, up: true } : p));
+      }
+    }
+  }, [open, pos]);
+
+  // Close on outside click (wrapper OR panel) / Escape
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (wrapRef.current?.contains(t) || panelRef.current?.contains(t)) return;
+      setOpen(false);
     };
     const keyHandler = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -50,9 +110,9 @@ export default function ContainerSelect({
   }, [open]);
 
   return (
-    <div className="relative shrink-0" ref={ref}>
+    <div className="relative shrink-0" ref={wrapRef}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? setOpen(false) : openMenu())}
         className="min-w-52 max-w-72 text-xs px-3 py-1.5 bg-slate-800 border border-slate-600
                    hover:border-slate-400 rounded text-slate-200 cursor-pointer
                    flex items-center justify-between gap-2 transition-colors"
@@ -63,57 +123,62 @@ export default function ContainerSelect({
         </svg>
       </button>
 
-      {open && (
-        <div className="absolute left-0 top-full mt-1 w-72 bg-slate-800 border border-slate-600
-                        rounded-lg shadow-xl z-50 py-1">
-          {headerAction && (
-            <div className="px-2 py-1 border-b border-slate-700">{headerAction}</div>
-          )}
-          <div className="max-h-64 overflow-y-auto">
-            {options.length === 0 ? (
-              <p className="text-xs text-slate-500 text-center py-3">暂无选项</p>
-            ) : (
-              options.map((o) => {
-                const isSelected = o.key === selectedKey;
-                return (
-                  <div
-                    key={o.key}
-                    onClick={() => {
-                      onSelect(o.key);
-                      setOpen(false);
-                    }}
-                    className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer
-                               transition-colors ${
-                                 isSelected
-                                   ? "bg-blue-900/40 text-blue-300"
-                                   : "text-slate-200 hover:bg-slate-700/70"
-                               }`}
-                  >
-                    <span className="flex-1 truncate">
-                      {o.meta ? `${o.meta} ` : ""}{o.label}
-                    </span>
-                    {typeof o.count === "number" && (
-                      <span className="text-slate-500 shrink-0">{o.count} Mod</span>
-                    )}
-                    {onDelete && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDelete(o.key);
-                        }}
-                        title="删除"
-                        className="text-[10px] px-1.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded shrink-0 cursor-pointer"
-                      >
-                        删除
-                      </button>
-                    )}
-                  </div>
-                );
-              })
+      {open && pos &&
+        createPortal(
+          <div
+            ref={panelRef}
+            className="fixed bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-[9999] py-1"
+            style={{ left: pos.left, top: pos.top, width: PANEL_W }}
+          >
+            {headerAction && (
+              <div className="px-2 py-1 border-b border-slate-700">{headerAction}</div>
             )}
-          </div>
-        </div>
-      )}
+            <div className="max-h-64 overflow-y-auto">
+              {options.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-3">暂无选项</p>
+              ) : (
+                options.map((o) => {
+                  const isSelected = o.key === selectedKey;
+                  return (
+                    <div
+                      key={o.key}
+                      onClick={() => {
+                        onSelect(o.key);
+                        setOpen(false);
+                      }}
+                      className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer
+                                 transition-colors ${
+                                   isSelected
+                                     ? "bg-blue-900/40 text-blue-300"
+                                     : "text-slate-200 hover:bg-slate-700/70"
+                                 }`}
+                    >
+                      <span className="flex-1 truncate">
+                        {o.meta ? `${o.meta} ` : ""}{o.label}
+                      </span>
+                      {typeof o.count === "number" && (
+                        <span className="text-slate-500 shrink-0">{o.count} Mod</span>
+                      )}
+                      {onDelete && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDelete(o.key);
+                          }}
+                          title="删除"
+                          className="text-[10px] px-1.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded shrink-0 cursor-pointer"
+                        >
+                          删除
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
