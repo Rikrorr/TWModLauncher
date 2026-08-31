@@ -1,10 +1,5 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-} from "react";
+import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { useCategoryStore, persistCategories } from "../../store/useCategoryStore";
 
 interface Props {
@@ -25,6 +20,11 @@ interface TagDialog {
  * Single click = select only that tag; Ctrl/Cmd+click toggles; Shift+click selects a range
  * (selection == the mod's tags, applied immediately).
  * Row-end "→" opens the shared create/edit dialog (name + color) with duplicate-name check.
+ *
+ * Rendered through a portal to document.body: the overlay must NOT live inside the
+ * ModCard/ModList DOM subtree, or every click would bubble into the card's
+ * onClick/onDoubleClick/onMouseDown handlers (drag preventDefault also blocks focus
+ * changes). All event classes are stopped at the portal root.
  */
 export default function CategoryPicker({ modKey, title, onClose }: Props) {
   const categories = useCategoryStore((s) => s.categories);
@@ -39,9 +39,6 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
   const [lastClicked, setLastClicked] = useState<string | null>(null);
   const [dialog, setDialog] = useState<TagDialog | null>(null);
   const [error, setError] = useState("");
-
-  const panelRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -122,51 +119,44 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
     if (lastClicked === catId) setLastClicked(null);
   };
 
-  // Panel: click outside / Escape closes (inert while the inner dialog is open)
+  // Escape: dialog first, then the whole window
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (dialogRef.current && dialogRef.current.contains(t)) return;
-      if (panelRef.current && !panelRef.current.contains(t)) onClose();
-    };
     const keyHandler = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !dialog) onClose();
     };
-    document.addEventListener("mousedown", handler);
     document.addEventListener("keydown", keyHandler);
-    return () => {
-      document.removeEventListener("mousedown", handler);
-      document.removeEventListener("keydown", keyHandler);
-    };
+    return () => document.removeEventListener("keydown", keyHandler);
   }, [onClose, dialog]);
 
-  // Dialog: click outside / Escape closes
   useEffect(() => {
     if (!dialog) return;
-    const handler = (e: MouseEvent) => {
-      if (dialogRef.current && !dialogRef.current.contains(e.target as Node)) {
-        setDialog(null);
-        setError("");
-      }
-    };
     const keyHandler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setDialog(null);
         setError("");
       }
     };
-    document.addEventListener("mousedown", handler);
     document.addEventListener("keydown", keyHandler);
-    return () => {
-      document.removeEventListener("mousedown", handler);
-      document.removeEventListener("keydown", keyHandler);
-    };
+    return () => document.removeEventListener("keydown", keyHandler);
   }, [dialog]);
 
-  return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60">
+  // Stop every event class from leaking into the mod list behind the overlay
+  const stop = (e: ReactMouseEvent) => e.stopPropagation();
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60"
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        // Click on the window backdrop (not on any child) closes the whole window
+        if (e.target === e.currentTarget) onClose();
+      }}
+      onClick={stop}
+      onDoubleClick={stop}
+      onContextMenu={stop}
+    >
       <div
-        ref={panelRef}
+        onMouseDown={stop}
         className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl w-[640px] max-w-[95vw] max-h-[85vh] flex flex-col"
       >
         {/* Header */}
@@ -281,10 +271,25 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
         </div>
       </div>
 
+      {/* Dialog backdrop: closes only the dialog, without reaching the panel rows */}
+      {dialog && (
+        <div
+          className="fixed inset-0 z-[300]"
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            setDialog(null);
+            setError("");
+          }}
+          onClick={stop}
+          onDoubleClick={stop}
+          onContextMenu={stop}
+        />
+      )}
+
       {/* Shared create/edit dialog */}
       {dialog && (
         <div
-          ref={dialogRef}
+          onMouseDown={stop}
           className="fixed z-[400] bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-4 w-80"
           style={{ left: "50%", top: "50%", transform: "translate(-50%, -50%)" }}
         >
@@ -334,6 +339,7 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
           </div>
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
