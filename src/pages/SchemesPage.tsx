@@ -233,6 +233,11 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     try {
       await deleteProfile(name);
       if (selectedName === name) setSelectedName(null);
+      // ★ v2.1: deleting the active scheme clears the active-scheme state
+      if (useAppStore.getState().activeSchemeName === name) {
+        useAppStore.getState().setActiveSchemeName(null);
+        useAppStore.getState().setActiveSchemeModKeys(null);
+      }
       void refresh();
     } catch (e) {
       setLastMessage(`删除失败: ${String(e)}`);

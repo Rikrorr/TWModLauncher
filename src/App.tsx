@@ -16,6 +16,7 @@ import {
   listProfiles,
 } from "./lib/tauriApi";
 import { collectModSettingsData, patchModSettingsLua, generateModSettingsLua, generateSettingsLua } from "./utils/generateModSettings";
+import { loadScheme } from "./utils/schemeMembers";
 import { useAppStore } from "./store/useAppStore";
 import { useModStore } from "./store/useModStore";
 import { useCategoryStore } from "./store/useCategoryStore";
@@ -46,7 +47,6 @@ function App() {
   const clearMods = useModStore((s) => s.clearMods);
   const selectMod = useModStore((s) => s.selectMod);
   const mods = useModStore((s) => s.mods);
-  const setMods = useModStore((s) => s.setMods);
   const { scan, rescan } = useModScanner();
 
   // ★ v2: hydrate global category/note/collection stores on startup
@@ -329,7 +329,32 @@ function App() {
   const handleSaveAll = useCallback(async () => {
     if (saving || !gamePath) return;
     const currentMods = useModStore.getState().mods;
-    const data = collectModSettingsData(currentMods);
+    // ★ v2.1: with a scheme active, ModSettings.Lua must reflect the scheme view
+    // (已读取Mod edits are the default config, not the active scheme state)
+    const activeScheme = useAppStore.getState().activeSchemeName;
+    let data: ReturnType<typeof collectModSettingsData>;
+    if (activeScheme) {
+      const scheme = await loadScheme(activeScheme);
+      if (scheme) {
+        const memberSet = new Set(scheme.modKeys ?? []);
+        const enabledSet = new Set(scheme.enabledMods);
+        const orderMap = scheme.modOrder ?? {};
+        const synced = currentMods.map((m) => {
+          const key = `${m.source}_${m.fileId}`;
+          const inScheme = memberSet.has(key);
+          return {
+            ...m,
+            enabled: inScheme && enabledSet.has(key),
+            order: inScheme ? (orderMap[key] ?? m.order) : 0,
+          };
+        });
+        data = collectModSettingsData(synced);
+      } else {
+        data = collectModSettingsData(currentMods);
+      }
+    } else {
+      data = collectModSettingsData(currentMods);
+    }
     const lua = templateRaw
       ? patchModSettingsLua(templateRaw, data)
       : generateModSettingsLua(data);
@@ -382,57 +407,11 @@ function App() {
     const memberSet = new Set(data.modKeys ?? []);
     const enabledSet = new Set(data.enabledMods);
     const orderMap = data.modOrder ?? {};
-    const settingsMap = data.modSettings ?? {};
 
-    const updated = mods.map((m) => {
-      const key = `${m.source}_${m.fileId}`;
-      const inScheme = memberSet.has(key);
-      return {
-        ...m,
-        enabled: inScheme && enabledSet.has(key),
-        order: inScheme ? (orderMap[key] ?? m.order) : 0,
-        currentSettings: inScheme ? (settingsMap[key] ?? m.currentSettings) : m.currentSettings,
-      };
-    });
-
-    setMods(updated);
-
-    // ★ v2: merge scheme-carried categories/notes into global stores (scheme wins)
-    if (data.modCategories && Object.keys(data.modCategories).length > 0) {
-      const catState = useCategoryStore.getState();
-      const merged = { ...catState.modCats, ...data.modCategories };
-      useCategoryStore.setState({ modCats: merged });
-    }
-    if (data.modNotes && Object.keys(data.modNotes).length > 0) {
-      const noteState = useNoteStore.getState();
-      const merged = { ...noteState.notes, ...data.modNotes };
-      useNoteStore.setState({ notes: merged });
-    }
-
-    // Restore groups and displayOrder if present
-    if (data.version >= 1 && data.groups) {
-      useAppStore.getState().setGroups(data.groups);
-
-      // Restore unified displayOrder from profile
-      try {
-        const raw = localStorage.getItem("twm-filter-prefs");
-        const prefs = raw ? JSON.parse(raw) : {};
-        if (data.displayOrder && data.displayOrder.length > 0) {
-          prefs.displayOrder = data.displayOrder;
-        } else if (data.groupOrder) {
-          // Legacy: merge old groupOrder into displayOrder
-          const order: string[] = prefs.displayOrder ?? [];
-          const cleaned = order.filter((k: string) => !data.groups.some((g) => g.id === k));
-          for (const gid of data.groupOrder) {
-            if (!cleaned.includes(gid)) cleaned.push(gid);
-          }
-          prefs.displayOrder = cleaned;
-        }
-        localStorage.setItem("twm-filter-prefs", JSON.stringify(prefs));
-      } catch { /* ignore */ }
-    }
-
-    // ★ v2: activating a scheme writes to disk immediately (decision A1)
+    // ★ v2.1: activation no longer mutates any global display state
+    // (mods / groups / categories / notes stay the pristine read-mods "default config",
+    //  so the 已读取Mod page never changes with scheme activation).
+    // The scheme's enabled/order view is built on the fly only when writing to disk.
     useAppStore.getState().setActiveSchemeName(data.name);
     useAppStore.getState().setActiveSchemeModKeys(data.modKeys ?? []);
     setLastMessage(`方案 "${data.name}" 已激活，正在同步...`);
@@ -443,7 +422,17 @@ function App() {
     }
     try {
       const currentMods = useModStore.getState().mods;
-      const sd = collectModSettingsData(currentMods);
+      // Build the scheme's enabled/order view for ModSettings.Lua
+      const synced = currentMods.map((m) => {
+        const key = `${m.source}_${m.fileId}`;
+        const inScheme = memberSet.has(key);
+        return {
+          ...m,
+          enabled: inScheme && enabledSet.has(key),
+          order: inScheme ? (orderMap[key] ?? m.order) : 0,
+        };
+      });
+      const sd = collectModSettingsData(synced);
       const lua = templateRaw
         ? patchModSettingsLua(templateRaw, sd)
         : generateModSettingsLua(sd);
@@ -477,12 +466,7 @@ function App() {
   };
 
   const handleSelectMod = useCallback(async (key: string) => {
-    // ★ v2: scheme-outside mods are read-only — config page locked
-    const memberKeys = useAppStore.getState().activeSchemeModKeys;
-    if (memberKeys && !memberKeys.includes(key)) {
-      setLastMessage("该 Mod 未加入当前方案，请先在可用池中将其加入方案");
-      return;
-    }
+    // ★ v2.1: 已读取Mod页 edits the default config freely — no scheme gating
     if (useAppStore.getState().isDirty) {
       await handleSaveAll();
     }
