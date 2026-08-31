@@ -21,6 +21,8 @@ interface Props {
   allTags: string[];
   /** ★ v3: user-defined tags merged into the tag dropdown */
   allUserTags: string[];
+  /** ★ v3: tag name → user-picked color (filter dropdown shows the real color) */
+  userTagColors?: Record<string, string>;
   viewMode: ViewMode;
   onToggleViewMode: () => void;
   onApplyOrder: () => void;
@@ -54,6 +56,7 @@ export default function ModFilterBar({
   onApplyOrder,
   onGroupCreateMouseDown,
   allUserTags,
+  userTagColors,
   hideGroupCreate,
   onGroupCreateClick,
 }: Props) {
@@ -221,6 +224,7 @@ export default function ModFilterBar({
               {/* ★ v3: user-defined tags (merged) */}
               {allUserTags.map((tag) => {
                 const checked = activeTags.has(tag);
+                const color = userTagColors?.[tag] ?? "#a855f7";
                 return (
                   <label
                     key={`user-${tag}`}
@@ -231,9 +235,9 @@ export default function ModFilterBar({
                       type="checkbox"
                       checked={checked}
                       onChange={() => onToggleTag(tag)}
-                      className="accent-purple-500"
+                      style={{ accentColor: color }}
                     />
-                    <span className="w-2 h-2 rounded-full bg-purple-500 shrink-0" />
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
                     {tag}
                   </label>
                 );

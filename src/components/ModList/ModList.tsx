@@ -883,6 +883,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
         tagDropdownRef={filter.tagDropdownRef}
         allTags={filter.allTags}
         allUserTags={filter.allUserTags}
+        userTagColors={filter.userTagColors}
         viewMode={filter.viewMode}
         onToggleViewMode={() =>
           filter.setViewMode((v) => (v === "detailed" ? "compact" : "detailed"))

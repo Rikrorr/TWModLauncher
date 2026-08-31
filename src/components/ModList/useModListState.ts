@@ -127,13 +127,22 @@ export function useModListState(mods: ModInfo[]) {
   const catFilterDropdownRef = useRef<HTMLDivElement>(null);
 
   // ★ v3: user tags (custom categories) — merged into the tag filter.
-  // Read from store directly so additions re-render the dropdown.
-  const allUserTags = (() => {
+  // Subscribed to the store so tag additions/renames/color edits refresh the dropdown.
+  const categories = useCategoryStore((s) => s.categories);
+  const allUserTags = useMemo(() => {
     const names = new Set<string>();
-    const state = useCategoryStore.getState();
-    for (const c of state.categories) names.add(c.name);
+    for (const c of categories) names.add(c.name);
     return [...names].sort((a, b) => a.localeCompare(b, "zh"));
-  })();
+  }, [categories]);
+
+  /** tag name → color (first category with that name wins; UI falls back to a default). */
+  const userTagColors = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const c of categories) {
+      if (c.color && !(c.name in map)) map[c.name] = c.color;
+    }
+    return map;
+  }, [categories]);
 
   // View mode
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -230,6 +239,7 @@ export function useModListState(mods: ModInfo[]) {
     allTags,
     // ★ v3: user tags merged into the tag filter
     allUserTags,
+    userTagColors,
     // ★ v2: user-category filter (kept for back-compat; UI merged into tags)
     activeCatIds,
     setActiveCatIds,

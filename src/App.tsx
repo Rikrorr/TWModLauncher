@@ -13,6 +13,7 @@ import {
   loadConfig,
   saveConfig,
   saveProfile,
+  listProfiles,
 } from "./lib/tauriApi";
 import { collectModSettingsData, patchModSettingsLua, generateModSettingsLua, generateSettingsLua } from "./utils/generateModSettings";
 import { useAppStore } from "./store/useAppStore";
@@ -59,6 +60,14 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // ★ v2.1: scheme-name dialog when creating a scheme from a collection
+  const [schemeDraft, setSchemeDraft] = useState<{
+    collectionId: string;
+    collectionName: string;
+    name: string;
+    hint: string;
+  } | null>(null);
+  const [existingSchemeNames, setExistingSchemeNames] = useState<Set<string>>(new Set());
   // ★ v3: cross-page collection creation seed (from ModsPage multi-select)
   const [collectionSeed, setCollectionSeed] = useState<{
     modKeys: string[];
@@ -344,7 +353,7 @@ function App() {
               const raw = generateSettingsLua(mod.currentSettings);
               await writeSettingsFile(mod.dirPath, raw);
               succeededKeys.push(key);
-            } catch (e) {
+            } catch {
               failedMods.push(mod.title);
             }
           }
@@ -511,59 +520,75 @@ function App() {
     setCurrentPage("collections");
   }, []);
 
-  // ★ v2: build a new scheme (profile) from a collection
-  const handleCreateSchemeFromCollection = useCallback(
-    (collectionId: string) => {
-      const col = useCollectionStore.getState().collections.find((c) => c.id === collectionId);
-      if (!col) return;
-      const now = new Date().toISOString();
-      const groupEntries = (col.groups ?? []).map((g, i) => ({
-        id: `col-group-${collectionId.slice(0, 8)}-${i}`,
-        name: g.name,
-        collapsed: false,
-        modKeys: g.modKeys,
-      }));
-      const data: ProfileData = {
-        version: 2,
-        name: col.name,
-        createdAt: now,
-        gamePath: useAppStore.getState().gamePath ?? "",
-        modKeys: col.modKeys,
-        enabledMods: col.enabledMods ?? [...col.modKeys],
-        modOrder: {},
-        // ★ v3: carry the collection's per-mod settings snapshot into the new scheme
-        modSettings: col.modSettings ?? {},
-        groups: groupEntries,
-        displayOrder: [
-          ...groupEntries.map((g) => g.id),
-          ...col.modKeys.filter((k) => !groupEntries.some((g) => g.modKeys.includes(k))),
-        ],
-        modMeta: col.modMeta,
-      };
-      handleProfileLoad(data);
-      setCurrentPage("schemes");
-      setLastMessage(`已从集合 "${col.name}" 创建方案，请确认后保存`);
-      // Auto-save the new scheme
-      const catStore = useCategoryStore.getState();
-      const noteStore = useNoteStore.getState();
-      const saveData: ProfileData = {
-        ...data,
-        modCategories: Object.fromEntries(
-          Object.keys(data.modMeta)
-            .filter((k) => (catStore.modCats[k] ?? []).length > 0)
-            .map((k) => [k, catStore.modCats[k]]),
-        ),
-        modNotes: Object.fromEntries(
-          Object.keys(data.modMeta)
-            .filter((k) => noteStore.notes[k]?.trim())
-            .map((k) => [k, noteStore.notes[k].trim()]),
-        ),
-      };
-      // Auto-save the new scheme
-      saveProfile(data.name, JSON.stringify(saveData, null, 2)).catch(() => {});
-    },
-    [handleProfileLoad, setLastMessage],
-  );
+  // ★ v2: build a new scheme (profile) from a collection — ask for a name first
+  const handleCreateSchemeFromCollection = useCallback((collectionId: string) => {
+    const col = useCollectionStore.getState().collections.find((c) => c.id === collectionId);
+    if (!col) return;
+    // Prefetch existing scheme names for the duplicate-name hint
+    listProfiles()
+      .then((list) => setExistingSchemeNames(new Set(list.map((p) => p.name))))
+      .catch(() => {});
+    setSchemeDraft({ collectionId, collectionName: col.name, name: col.name, hint: "" });
+  }, []);
+
+  const handleSchemeDraftConfirm = useCallback(() => {
+    if (!schemeDraft) return;
+    const name = schemeDraft.name.trim();
+    if (!name) return;
+    const col = useCollectionStore.getState().collections.find(
+      (c) => c.id === schemeDraft.collectionId,
+    );
+    if (!col) {
+      setSchemeDraft(null);
+      return;
+    }
+    const now = new Date().toISOString();
+    const groupEntries = (col.groups ?? []).map((g, i) => ({
+      id: `col-group-${col.id.slice(0, 8)}-${i}`,
+      name: g.name,
+      collapsed: false,
+      modKeys: g.modKeys,
+    }));
+    const data: ProfileData = {
+      version: 2,
+      name,
+      createdAt: now,
+      gamePath: useAppStore.getState().gamePath ?? "",
+      modKeys: col.modKeys,
+      enabledMods: col.enabledMods ?? [...col.modKeys],
+      modOrder: {},
+      // ★ v3: carry the collection's per-mod settings snapshot into the new scheme
+      modSettings: col.modSettings ?? {},
+      groups: groupEntries,
+      displayOrder: [
+        ...groupEntries.map((g) => g.id),
+        ...col.modKeys.filter((k) => !groupEntries.some((g) => g.modKeys.includes(k))),
+      ],
+      modMeta: col.modMeta,
+    };
+    // Switch to the new scheme and navigate to the Schemes page
+    handleProfileLoad(data);
+    setCurrentPage("schemes");
+    setLastMessage(`已从集合 "${col.name}" 创建方案 "${name}"，请确认后保存`);
+    // Auto-save the new scheme
+    const catStore = useCategoryStore.getState();
+    const noteStore = useNoteStore.getState();
+    const saveData: ProfileData = {
+      ...data,
+      modCategories: Object.fromEntries(
+        Object.keys(data.modMeta)
+          .filter((k) => (catStore.modCats[k] ?? []).length > 0)
+          .map((k) => [k, catStore.modCats[k]]),
+      ),
+      modNotes: Object.fromEntries(
+        Object.keys(data.modMeta)
+          .filter((k) => noteStore.notes[k]?.trim())
+          .map((k) => [k, noteStore.notes[k].trim()]),
+      ),
+    };
+    saveProfile(name, JSON.stringify(saveData, null, 2)).catch(() => {});
+    setSchemeDraft(null);
+  }, [handleProfileLoad, setLastMessage, schemeDraft]);
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-slate-100">
       {/* Body: Sidebar + active page */}
@@ -689,6 +714,62 @@ function App() {
           <span className="ml-auto text-blue-400">正在验证...</span>
         )}
       </footer>
+
+      {/* Scheme-name dialog: creating a scheme from a collection */}
+      {schemeDraft && (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setSchemeDraft(null);
+          }}
+        >
+          <div className="bg-slate-800 border border-slate-600 rounded-lg shadow-2xl w-96 max-w-[90vw] p-5">
+            <p className="text-sm font-semibold text-slate-200 mb-1">从集合创建方案</p>
+            <p className="text-xs text-slate-500 mb-3">
+              为基于集合「{schemeDraft.collectionName}」的新方案命名
+            </p>
+            <input
+              value={schemeDraft.name}
+              onChange={(e) => {
+                const name = e.target.value;
+                setSchemeDraft({
+                  ...schemeDraft,
+                  name,
+                  hint: existingSchemeNames.has(name.trim())
+                    ? "已存在同名方案，保存将覆盖该方案"
+                    : "",
+                });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSchemeDraftConfirm();
+                if (e.key === "Escape") setSchemeDraft(null);
+              }}
+              autoFocus
+              placeholder="方案名称..."
+              className="w-full text-xs px-2.5 py-1.5 bg-slate-900 border border-slate-600 rounded
+                         text-slate-200 outline-none focus:border-blue-500 mb-2"
+            />
+            {schemeDraft.hint && (
+              <p className="text-xs text-amber-400 mb-2">{schemeDraft.hint}</p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setSchemeDraft(null)}
+                className="text-xs px-3 py-1.5 border border-slate-600 text-slate-300 rounded cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSchemeDraftConfirm}
+                disabled={!schemeDraft.name.trim()}
+                className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded cursor-pointer"
+              >
+                确定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
