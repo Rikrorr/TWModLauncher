@@ -132,9 +132,34 @@ export default function CollectionsPage({
               snap && Object.keys(snap).length > 0 ? snap : m.currentSettings,
             // ★ v3: show the collection's order snapshot (falls back to 0)
             order: selected?.modOrder?.[key] ?? 0,
+            // ★ v2.1: collection-local enable state — defaults to all members
+            // enabled when the collection has no explicit enabledMods yet.
+            enabled: (selected?.enabledMods ?? selected?.modKeys ?? []).includes(key),
           };
         }),
     [mods, memberSet, selected],
+  );
+
+  // ★ v2.1: toggle a member's enable state — writes ONLY the collection's own
+  // enabledMods (never the active scheme / global mod state).
+  const handleToggleMember = useCallback(
+    (fileId: number, enabled: boolean) => {
+      if (!selected) return;
+      const mod = mods.find((m) => m.fileId === fileId);
+      if (!mod) return;
+      const key = `${mod.source}_${mod.fileId}`;
+      const store = useCollectionStore.getState();
+      const updated = store.collections.map((c) => {
+        if (c.id !== selected.id) return c;
+        const base = new Set(c.enabledMods ?? c.modKeys);
+        if (enabled) base.add(key);
+        else base.delete(key);
+        return { ...c, enabledMods: [...base], updatedAt: new Date().toISOString() };
+      });
+      useCollectionStore.setState({ collections: updated });
+      try { localStorage.setItem("twm-mod-collections", JSON.stringify(updated)); } catch { /* ignore */ }
+    },
+    [mods, selected],
   );
 
   // ★ v3: write load-order back into the collection data (immediate)
@@ -163,7 +188,14 @@ export default function CollectionsPage({
       const store = useCollectionStore.getState();
       const updated = store.collections.map((c) =>
         c.id === selected.id
-          ? { ...c, modKeys: c.modKeys.filter((k) => k !== key), updatedAt: new Date().toISOString() }
+          ? {
+              ...c,
+              modKeys: c.modKeys.filter((k) => k !== key),
+              enabledMods: c.enabledMods
+                ? c.enabledMods.filter((k) => k !== key)
+                : undefined,
+              updatedAt: new Date().toISOString(),
+            }
           : c,
       );
       useCollectionStore.setState({ collections: updated });
@@ -250,14 +282,13 @@ export default function CollectionsPage({
             saving={false}
             onSelectMod={(key) => setConfigModKey(key)}
             hideEnabledState
-            hideToggle
             controlled={{
               mods: memberMods,
               groups: sessionGroups,
               displayOrder: sessionDisplayOrder,
               setGroups,
               setDisplayOrder,
-              toggleMod: () => {}, // collections have no enable/disable semantics
+              toggleMod: handleToggleMember,
               setModOrder: (key, order) => handleOrderChange(key, order),
               clearSelection,
               selectedModKeys,

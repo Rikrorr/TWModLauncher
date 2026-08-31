@@ -475,17 +475,21 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     (key: string, order: number) => {
       // ★ v3: read-only browse mode — no ordering
       if (readOnly) return;
-      // ★ v2: scheme-outside mods are read-only
-      const memberSet = activeSchemeModKeys ? new Set(activeSchemeModKeys) : null;
-      if (memberSet && !memberSet.has(key)) {
-        setLastMessage("该 Mod 未加入当前方案，无法调整顺序");
-        return;
+      // ★ v2: scheme-outside mods are read-only.
+      // v2.1: only the global (uncontrolled) pool view is gated — container
+      // lists (scheme/collection) manage their own order.
+      if (!controlled) {
+        const memberSet = activeSchemeModKeys ? new Set(activeSchemeModKeys) : null;
+        if (memberSet && !memberSet.has(key)) {
+          setLastMessage("该 Mod 未加入当前方案，无法调整顺序");
+          return;
+        }
       }
       clearSelection();
       setModOrder(key, order);
       setDirty(true);
     },
-    [setModOrder, setDirty, clearSelection, activeSchemeModKeys, setLastMessage, readOnly],
+    [setModOrder, setDirty, clearSelection, activeSchemeModKeys, setLastMessage, readOnly, controlled],
   );
 
   const handleApplyOrder = useCallback(() => {
@@ -586,18 +590,23 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     (fileId: number, enabled: boolean) => {
       // ★ v3: read-only browse mode — no toggling
       if (readOnly) return;
-      // ★ v2: scheme-outside mods are read-only — cannot be toggled
+      // ★ v2: scheme-outside mods are read-only — cannot be toggled.
+      // v2.1: only the global (uncontrolled) pool view is gated; container
+      // lists (scheme/collection) decide via their own controllers, so toggling
+      // a collection member never touches the active scheme.
       const key = `${mods.find((m) => m.fileId === fileId)?.source ?? 0}_${fileId}`;
-      const memberSet = activeSchemeModKeys ? new Set(activeSchemeModKeys) : null;
-      if (memberSet && !memberSet.has(key)) {
-        setLastMessage("该 Mod 未加入当前方案，请在方案内添加后再启用");
-        return;
+      if (!controlled) {
+        const memberSet = activeSchemeModKeys ? new Set(activeSchemeModKeys) : null;
+        if (memberSet && !memberSet.has(key)) {
+          setLastMessage("该 Mod 未加入当前方案，请在方案内添加后再启用");
+          return;
+        }
       }
       clearSelection();
       toggleMod(fileId, enabled);
       setDirty(true);
     },
-    [toggleMod, setDirty, clearSelection, activeSchemeModKeys, setLastMessage, readOnly],
+    [toggleMod, setDirty, clearSelection, activeSchemeModKeys, setLastMessage, readOnly, controlled],
   );
 
   // ── Selection click handlers ──────────────────────────────────────────────

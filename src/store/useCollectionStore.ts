@@ -95,11 +95,17 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         const nextOrder = modOrder
           ? { ...(c.modOrder ?? {}), ...modOrder }
           : c.modOrder;
+        // ★ v2.1: newly added members default to enabled (extends enabledMods)
+        const nextEnabled = c.enabledMods
+          ? [...new Set([...c.enabledMods, ...modKeys])]
+          : undefined;
         if (
           next.length === c.modKeys.length &&
           Object.keys(nextMeta).length === Object.keys(c.modMeta).length &&
           Object.keys(nextSettings ?? {}).length === Object.keys(c.modSettings ?? {}).length &&
-          Object.keys(nextOrder ?? {}).length === Object.keys(c.modOrder ?? {}).length
+          Object.keys(nextOrder ?? {}).length === Object.keys(c.modOrder ?? {}).length &&
+          (nextEnabled === undefined ||
+            nextEnabled.length === (c.enabledMods ?? []).length)
         ) {
           return c;
         }
@@ -110,6 +116,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
           modMeta: nextMeta,
           modSettings: nextSettings,
           modOrder: nextOrder,
+          enabledMods: nextEnabled,
           updatedAt: new Date().toISOString(),
         };
       }),
