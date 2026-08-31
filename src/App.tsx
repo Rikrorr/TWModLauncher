@@ -515,7 +515,7 @@ function App() {
     setSchemeDraft({ collectionId, collectionName: col.name, name: col.name, hint: "" });
   }, []);
 
-  const handleSchemeDraftConfirm = useCallback(() => {
+  const handleSchemeDraftConfirm = useCallback(async () => {
     if (!schemeDraft) return;
     const name = schemeDraft.name.trim();
     if (!name) return;
@@ -541,37 +541,42 @@ function App() {
       modKeys: col.modKeys,
       enabledMods: col.enabledMods ?? [...col.modKeys],
       modOrder: {},
-      // ★ v3: carry the collection's per-mod settings snapshot into the new scheme
+      // ★ v3: carry the collection per-mod settings snapshot into the new scheme
       modSettings: col.modSettings ?? {},
       groups: groupEntries,
       displayOrder: [
         ...groupEntries.map((g) => g.id),
         ...col.modKeys.filter((k) => !groupEntries.some((g) => g.modKeys.includes(k))),
       ],
-      modMeta: col.modMeta,
+      modMeta: col.modMeta ?? {},
     };
-    // Switch to the new scheme and navigate to the Schemes page
-    handleProfileLoad(data);
-    setCurrentPage("schemes");
-    setLastMessage(`已从集合 "${col.name}" 创建方案 "${name}"，请确认后保存`);
-    // Auto-save the new scheme
     const catStore = useCategoryStore.getState();
     const noteStore = useNoteStore.getState();
     const saveData: ProfileData = {
       ...data,
       modCategories: Object.fromEntries(
-        Object.keys(data.modMeta)
+        Object.keys(data.modMeta ?? {})
           .filter((k) => (catStore.modCats[k] ?? []).length > 0)
           .map((k) => [k, catStore.modCats[k]]),
       ),
       modNotes: Object.fromEntries(
-        Object.keys(data.modMeta)
+        Object.keys(data.modMeta ?? {})
           .filter((k) => noteStore.notes[k]?.trim())
           .map((k) => [k, noteStore.notes[k].trim()]),
       ),
     };
-    saveProfile(name, JSON.stringify(saveData, null, 2)).catch(() => {});
+    // ★ v2.1: persist FIRST (awaited, errors visible), then activate + navigate —
+    // the Schemes page mounts after the file exists, so the new scheme shows up.
     setSchemeDraft(null);
+    try {
+      await saveProfile(name, JSON.stringify(saveData, null, 2));
+    } catch (e) {
+      setLastMessage(`方案 "${name}" 保存失败: ${String(e)}`);
+      return;
+    }
+    handleProfileLoad(data);
+    setCurrentPage("schemes");
+    setLastMessage(`已从集合 "${col.name}" 创建方案 "${name}"`);
   }, [handleProfileLoad, setLastMessage, schemeDraft]);
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-slate-100">
