@@ -122,13 +122,15 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
     if (lastClicked === catId) setLastClicked(null);
   };
 
-  // Panel: click outside / Escape closes
+  // Panel: click outside / Escape closes (inert while the inner dialog is open)
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) onClose();
+      const t = e.target as Node;
+      if (dialogRef.current && dialogRef.current.contains(t)) return;
+      if (panelRef.current && !panelRef.current.contains(t)) onClose();
     };
     const keyHandler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !dialog) onClose();
     };
     document.addEventListener("mousedown", handler);
     document.addEventListener("keydown", keyHandler);
@@ -136,7 +138,7 @@ export default function CategoryPicker({ modKey, title, onClose }: Props) {
       document.removeEventListener("mousedown", handler);
       document.removeEventListener("keydown", keyHandler);
     };
-  }, [onClose]);
+  }, [onClose, dialog]);
 
   // Dialog: click outside / Escape closes
   useEffect(() => {
