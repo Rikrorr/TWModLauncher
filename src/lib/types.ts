@@ -171,6 +171,9 @@ export interface ModCollection {
   modOrder?: Record<string, number>;
   /** ★ v3: per-member mod settings snapshot (independent from the read-mods base config) */
   modSettings?: Record<string, Record<string, unknown>>;
+  /** ★ v2.1: member keys in actual LOAD order (independent of groups).
+   *  Absent on legacy collections — derived from modOrder values on use. */
+  loadOrder?: string[];
   /** Mod metadata for missing-mod detection on import */
   modMeta: Record<string, ModMeta>;
   /** Collection schema version */

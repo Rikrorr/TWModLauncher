@@ -221,7 +221,7 @@ export default function ModCard({
         >
           <button
             onClick={onOrderUp}
-            title="加载顺序 +1"
+            title="提前一位（位置 -1）"
             className="text-slate-500 hover:text-slate-200 cursor-pointer transition-colors text-[10px]"
           >
             ▲
@@ -266,7 +266,7 @@ export default function ModCard({
           />
           <button
             onClick={onOrderDown}
-            title="加载顺序 -1"
+            title="延后一位（位置 +1）"
             className="text-slate-500 hover:text-slate-200 cursor-pointer transition-colors text-[10px]"
           >
             ▼
@@ -518,7 +518,7 @@ export default function ModCard({
         <div className="flex flex-col items-center gap-0.5">
           <button
             onClick={onOrderUp}
-            title="加载顺序 +1"
+            title="提前一位（位置 -1）"
             className="text-slate-500 hover:text-slate-200 cursor-pointer transition-colors px-1 text-xs"
           >
             ▲
@@ -564,7 +564,7 @@ export default function ModCard({
           />
           <button
             onClick={onOrderDown}
-            title="加载顺序 -1"
+            title="延后一位（位置 +1）"
             className="text-slate-500 hover:text-slate-200 cursor-pointer transition-colors px-1 text-xs"
           >
             ▼

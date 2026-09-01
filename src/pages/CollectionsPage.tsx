@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCollectionStore } from "../store/useCollectionStore";
 import { useAppStore } from "../store/useAppStore";
-import { loadScheme, addModsToScheme, saveScheme, buildModMeta, buildModSettings } from "../utils/schemeMembers";
+import { loadScheme, addModsToScheme, saveScheme, buildModMeta, buildModSettings, ensureLoadOrder } from "../utils/schemeMembers";
 import type { ModGroup, ModInfo, ModMeta } from "../lib/types";
 import ModList from "../components/ModList/ModList";
 import ModActionMenu from "../components/common/ModActionMenu";
@@ -125,6 +125,16 @@ export default function CollectionsPage({
   }, [seed, create, onSeedConsumed, setSelectedId]);
 
   const memberSet = useMemo(() => new Set(selected?.modKeys ?? []), [selected]);
+  // ★ v2.1: effective member load sequence (legacy collections migrate on use)
+  const colLoadOrder = useMemo(
+    () => (selected ? ensureLoadOrder(selected) : []),
+    [selected],
+  );
+  const colLoadPosMap = useMemo(() => {
+    const map = new Map<string, number>();
+    colLoadOrder.forEach((k, i) => map.set(k, i + 1));
+    return map;
+  }, [colLoadOrder]);
   const memberMods = useMemo(
     () =>
       mods
@@ -137,14 +147,14 @@ export default function CollectionsPage({
             ...m,
             currentSettings:
               snap && Object.keys(snap).length > 0 ? snap : m.currentSettings,
-            // ★ v3: show the collection's order snapshot (falls back to 0)
-            order: selected?.modOrder?.[key] ?? 0,
+            // ★ v2.1: derived order = position in the load sequence (1-based)
+            order: colLoadPosMap.get(key) ?? 0,
             // ★ v2.1: collection-local enable state — defaults to all members
             // enabled when the collection has no explicit enabledMods yet.
             enabled: (selected?.enabledMods ?? selected?.modKeys ?? []).includes(key),
           };
         }),
-    [mods, memberSet, selected],
+    [mods, memberSet, selected, colLoadPosMap],
   );
 
   // ★ v2.1: toggle a member's enable state — writes ONLY the collection's own
@@ -169,18 +179,23 @@ export default function CollectionsPage({
     [mods, selected],
   );
 
-  // ★ v3: write load-order back into the collection data (immediate)
+  // ★ v2.1: order mutations reposition the member within the load sequence
+  // (input N = move to 1-based position N; the mod at N and below shift +1)
   const handleOrderChange = useCallback(
     (key: string, order: number) => {
       if (!selected) return;
+      const cur = ensureLoadOrder(selected);
+      const from = cur.indexOf(key);
+      if (from === -1) return;
+      const target = Math.max(1, Math.min(cur.length, Math.round(order)));
+      if (target === from + 1) return;
+      const next = [...cur];
+      next.splice(from, 1);
+      next.splice(target - 1, 0, key);
       const store = useCollectionStore.getState();
       const updated = store.collections.map((c) =>
         c.id === selected.id
-          ? {
-              ...c,
-              modOrder: { ...(c.modOrder ?? {}), [key]: order },
-              updatedAt: new Date().toISOString(),
-            }
+          ? { ...c, loadOrder: next, updatedAt: new Date().toISOString() }
           : c,
       );
       useCollectionStore.setState({ collections: updated });
@@ -200,6 +215,9 @@ export default function CollectionsPage({
               modKeys: c.modKeys.filter((k) => k !== key),
               enabledMods: c.enabledMods
                 ? c.enabledMods.filter((k) => k !== key)
+                : undefined,
+              loadOrder: c.loadOrder
+                ? c.loadOrder.filter((k) => k !== key)
                 : undefined,
               updatedAt: new Date().toISOString(),
             }

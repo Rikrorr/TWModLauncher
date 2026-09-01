@@ -12,6 +12,7 @@ interface CollectionState {
     groups?: { name: string; modKeys: string[] }[];
     enabledMods?: string[];
     modOrder?: Record<string, number>;
+    loadOrder?: string[];
     modSettings?: Record<string, Record<string, unknown>>;
     modMeta: Record<string, ModMeta>;
   }) => ModCollection;
@@ -68,6 +69,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       groups: c.groups,
       enabledMods: c.enabledMods,
       modOrder: c.modOrder,
+      loadOrder: c.loadOrder,
       modSettings: c.modSettings,
       modMeta: c.modMeta,
       version: 1,
@@ -99,13 +101,19 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         const nextEnabled = c.enabledMods
           ? [...new Set([...c.enabledMods, ...modKeys])]
           : undefined;
+        // ★ v2.1: newly added members append to the load order
+        const nextLoadOrder = c.loadOrder
+          ? [...new Set([...c.loadOrder, ...modKeys])]
+          : undefined;
         if (
           next.length === c.modKeys.length &&
           Object.keys(nextMeta).length === Object.keys(c.modMeta).length &&
           Object.keys(nextSettings ?? {}).length === Object.keys(c.modSettings ?? {}).length &&
           Object.keys(nextOrder ?? {}).length === Object.keys(c.modOrder ?? {}).length &&
           (nextEnabled === undefined ||
-            nextEnabled.length === (c.enabledMods ?? []).length)
+            nextEnabled.length === (c.enabledMods ?? []).length) &&
+          (nextLoadOrder === undefined ||
+            nextLoadOrder.length === (c.loadOrder ?? []).length)
         ) {
           return c;
         }
@@ -117,6 +125,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
           modSettings: nextSettings,
           modOrder: nextOrder,
           enabledMods: nextEnabled,
+          loadOrder: nextLoadOrder,
           updatedAt: new Date().toISOString(),
         };
       }),
@@ -157,6 +166,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       groups: col.groups,
       enabledMods: col.enabledMods,
       modOrder: col.modOrder,
+      loadOrder: col.loadOrder,
       modSettings: col.modSettings,
       modMeta: col.modMeta ?? {},
       version: 1,

@@ -1017,13 +1017,15 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
                       onOrderUp={(e) => {
                         e.stopPropagation();
                         clearSelection();
-                        setModOrder(item.key, mod.order + 1);
+                        // ★ v2.1: position semantics — up = earlier (position -1)
+                        setModOrder(item.key, Math.max(1, mod.order - 1));
                         setDirty(true);
                       }}
                       onOrderDown={(e) => {
                         e.stopPropagation();
                         clearSelection();
-                        setModOrder(item.key, Math.max(0, mod.order - 1));
+                        // ★ v2.1: position semantics — down = later (position +1)
+                        setModOrder(item.key, mod.order + 1);
                         setDirty(true);
                       }}
                       onOrderChange={(order) => handleOrderChange(item.key, order)}
@@ -1182,11 +1184,13 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
             onCreateGroupAndSend={handleCreateGroupAndSend}
             onOrderUp={() => {
               clearSelection();
-              setModOrder(contextMenu.key, Math.max(0, mod.order - 1));
+              // ★ v2.1: position semantics — up = earlier (position -1)
+              setModOrder(contextMenu.key, Math.max(1, mod.order - 1));
               setDirty(true);
             }}
             onOrderDown={() => {
               clearSelection();
+              // ★ v2.1: position semantics — down = later (position +1)
               setModOrder(contextMenu.key, mod.order + 1);
               setDirty(true);
             }}

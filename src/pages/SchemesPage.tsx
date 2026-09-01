@@ -190,18 +190,19 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     [modKeyForFileId],
   );
 
-  // ★ v2.1: order mutations reposition the member within the load sequence
+  // ★ v2.1: order mutations reposition the member within the load sequence.
+  // Input N = move to 1-based position N — the mod at N and below shift +1.
   const handleOrderChange = useCallback((key: string, order: number) => {
     setScheme((prev) => {
       if (!prev) return prev;
       const cur = ensureLoadOrder(prev);
       const from = cur.indexOf(key);
       if (from === -1) return prev;
-      const to = Math.max(0, Math.min(cur.length - 1, order));
-      if (to === from) return prev;
+      const target = Math.max(1, Math.min(cur.length, Math.round(order)));
+      if (target === from + 1) return prev;
       const next = [...cur];
       next.splice(from, 1);
-      next.splice(to, 0, key);
+      next.splice(target - 1, 0, key);
       const out = { ...prev, loadOrder: next };
       void saveScheme(out).catch(() => {});
       return out;
@@ -526,13 +527,13 @@ export default function SchemesPage({ mods, onActivate }: Props) {
             mods={loadMods}
             onMoveUp={(key) => handleLoadMove(key, -1)}
             onMoveDown={(key) => handleLoadMove(key, 1)}
+            onMoveToPosition={(key, pos) => handleOrderChange(key, pos)}
             onToggle={handleToggleMember}
           />
         ) : (
           <ModList
             saving={false}
             onSelectMod={(key) => setConfigModKey(key)}
-            hideOrder
             controlled={{
               mods: displayMods,
               groups: scheme.groups ?? [],
