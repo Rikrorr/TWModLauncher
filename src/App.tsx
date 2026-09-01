@@ -571,6 +571,8 @@ function App() {
       };
       // ★ v2.1: persist FIRST (awaited, errors visible), then activate + navigate
       await saveProfile(name, JSON.stringify(saveData, null, 2));
+      // Select the newly created scheme on the Schemes page (edit selection)
+      useAppStore.getState().setSchemeEditName(name);
       handleProfileLoad(data);
       setCurrentPage("schemes");
       setLastMessage(
