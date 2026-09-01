@@ -16,7 +16,7 @@ import {
   listProfiles,
 } from "./lib/tauriApi";
 import { collectModSettingsData, patchModSettingsLua, generateModSettingsLua, generateSettingsLua } from "./utils/generateModSettings";
-import { loadScheme, buildLoadOrderMap } from "./utils/schemeMembers";
+import { loadScheme, buildLoadOrderMap, sanitizeSchemeName } from "./utils/schemeMembers";
 import { useAppStore } from "./store/useAppStore";
 import { useModStore } from "./store/useModStore";
 import { useCategoryStore } from "./store/useCategoryStore";
@@ -525,7 +525,7 @@ function App() {
     const rawName = schemeDraft.name.trim();
     if (!rawName) return;
     // Windows filename safety: strip characters invalid in file names.
-    const name = rawName.replace(/[\\\\/:*?"<>|]/g, "").trim();
+    const name = sanitizeSchemeName(rawName);
     const col = useCollectionStore.getState().collections.find(
       (c) => c.id === schemeDraft.collectionId,
     );

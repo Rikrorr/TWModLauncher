@@ -110,6 +110,12 @@ export async function saveScheme(data: ProfileData): Promise<void> {
   await saveProfile(data.name, JSON.stringify(data, null, 2));
 }
 
+/** Strip Windows-invalid filename characters — scheme names become profile
+ *  file names on disk (`{name}.json`), so they must survive a filesystem path. */
+export function sanitizeSchemeName(name: string): string {
+  return name.replace(/[\\/:*?"<>|]/g, "").trim();
+}
+
 // ── ★ v2.1: independent load order ──────────────────────────────────────────
 
 /**

@@ -12,6 +12,7 @@ import {
   analyzeCollectionMerge,
   mergeCollectionIntoScheme,
   ensureLoadOrder,
+  sanitizeSchemeName,
   type CollectionMergeConflict,
 } from "../utils/schemeMembers";
 import { detectMissingMods } from "../utils/migrateProfile";
@@ -333,7 +334,13 @@ export default function SchemesPage({ mods, onActivate }: Props) {
   // ★ v3: create a new (empty) scheme via modal dialog
   const [createSchemeOpen, setCreateSchemeOpen] = useState(false);
   const handleCreateScheme = useCallback(
-    async (name: string) => {
+    async (rawName: string) => {
+      // ★ v2.1: scheme names become file names — strip Windows-invalid chars
+      const name = sanitizeSchemeName(rawName);
+      if (!name) {
+        setLastMessage("方案名称无效（仅含文件名非法字符）");
+        return;
+      }
       const now = new Date().toISOString();
       const data: ProfileData = {
         version: 2,
@@ -351,7 +358,11 @@ export default function SchemesPage({ mods, onActivate }: Props) {
       try {
         await saveProfile(name, JSON.stringify(data, null, 2));
         setSelectedName(name);
-        setLastMessage(`方案 "${name}" 已创建`);
+        setLastMessage(
+          name !== rawName
+            ? `方案 "${name}" 已创建（已移除文件名非法字符）`
+            : `方案 "${name}" 已创建`,
+        );
         void refresh();
       } catch (e) {
         setLastMessage(`创建失败: ${String(e)}`);
