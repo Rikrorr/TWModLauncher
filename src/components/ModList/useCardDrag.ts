@@ -124,7 +124,10 @@ export function useCardDrag({
         multiDragMinIdx: multiDrag ? multiDragMinIdx : undefined,
       });
     },
-    [displayOrder, groups, modGroupMapRef, refs],
+    // ★ v2.1: controlledSelected/controlledClear must be fresh — a stale closure
+    // (first-render empty selection) made multiDrag always false and wiped the
+    // user's real multi-selection before the drag.
+    [displayOrder, groups, modGroupMapRef, refs, controlledSelected, controlledClear],
   );
 
   // ── Event listener lifecycle ──

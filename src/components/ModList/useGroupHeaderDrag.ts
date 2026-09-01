@@ -65,7 +65,7 @@ export function useGroupHeaderDrag({
         started: false,
       });
     },
-    [displayOrder, groups, refs],
+    [displayOrder, groups, refs, clearSelectionFn],
   );
 
   // Event listener lifecycle
