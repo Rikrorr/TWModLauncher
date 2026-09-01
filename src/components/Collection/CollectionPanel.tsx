@@ -3,6 +3,7 @@ import { save, open as openDialog, ask } from "@tauri-apps/plugin-dialog";
 import { writeFile, readFile } from "../../lib/tauriApi";
 import { useCollectionStore } from "../../store/useCollectionStore";
 import { detectMissingMods } from "../../utils/migrateProfile";
+import { dateDefaultName } from "../../utils/schemeMembers";
 import type { ModInfo } from "../../lib/types";
 import MissingModsDialog from "../ProfileManager/MissingModsDialog";
 import type { ModMeta } from "../../lib/types";
@@ -28,7 +29,7 @@ export default function CollectionPanel({ mods, onClose, onCreateSchemeFromColle
   // (seed consumed once at mount via initializer — no effect setState)
   const [showCreate, setShowCreate] = useState(() => !!(seed && seed.modKeys.length > 0));
   const [name, setName] = useState(() =>
-    seed && seed.modKeys.length > 0 ? `集合 ${new Date().toLocaleDateString("zh-CN")}` : "",
+    seed && seed.modKeys.length > 0 ? dateDefaultName("集合") : "",
   );
   const [desc, setDesc] = useState("");
   const [message, setMessage] = useState<{ text: string; type: "ok" | "error" } | null>(null);

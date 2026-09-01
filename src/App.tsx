@@ -524,8 +524,16 @@ function App() {
     if (!schemeDraft) return;
     const rawName = schemeDraft.name.trim();
     if (!rawName) return;
-    // Windows filename safety: strip characters invalid in file names.
+    // Windows filename safety: strip characters invalid in file names,
+    // and let the user decide before rewriting their input.
     const name = sanitizeSchemeName(rawName);
+    if (name !== rawName) {
+      const ok = await ask(
+        `名称 "${rawName}" 包含文件名非法字符（如 / \\ : * ? " < > |），将以 "${name}" 创建。是否继续？`,
+        { title: "名称含非法字符", kind: "warning" },
+      );
+      if (!ok) return;
+    }
     const col = useCollectionStore.getState().collections.find(
       (c) => c.id === schemeDraft.collectionId,
     );

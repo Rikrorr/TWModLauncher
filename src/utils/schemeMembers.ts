@@ -116,6 +116,13 @@ export function sanitizeSchemeName(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, "").trim();
 }
 
+/** Default container name with a dotted date (e.g. "方案 2026.9.1") —
+ *  the slash-separated locale date would break scheme file names. */
+export function dateDefaultName(prefix: string): string {
+  const d = new Date();
+  return `${prefix} ${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+}
+
 // ── ★ v2.1: independent load order ──────────────────────────────────────────
 
 /**

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCollectionStore } from "../store/useCollectionStore";
 import { useAppStore } from "../store/useAppStore";
-import { loadScheme, addModsToScheme, saveScheme, buildModMeta, buildModSettings, ensureLoadOrder } from "../utils/schemeMembers";
-import type { ModGroup, ModInfo, ModMeta } from "../lib/types";
+import { loadScheme, addModsToScheme, saveScheme, buildModMeta, buildModSettings, ensureLoadOrder, dateDefaultName } from "../utils/schemeMembers";
+import type { ModGroup, ModInfo, ModMeta, ModCollection } from "../lib/types";
 import ModList from "../components/ModList/ModList";
 import LoadOrderList from "../components/Scheme/LoadOrderList";
 import ModActionMenu from "../components/common/ModActionMenu";
@@ -92,10 +92,17 @@ export default function CollectionsPage({
         modKeys: g.modKeys.filter((k) => selected.modKeys.includes(k)),
       }));
       const grouped = new Set(groups.flatMap((g) => g.modKeys));
-      const order: string[] = [
-        ...groups.map((g) => g.id),
-        ...selected.modKeys.filter((k) => !grouped.has(k)),
-      ];
+      // ★ v2.1: prefer the persisted display order (survives remounts), else derive
+      const persistedOrder = (selected.displayOrder ?? []).filter(
+        (k) => groups.some((g) => g.id === k) || selected.modKeys.includes(k),
+      );
+      const order =
+        persistedOrder.length > 0
+          ? persistedOrder
+          : [
+              ...groups.map((g) => g.id),
+              ...selected.modKeys.filter((k) => !grouped.has(k)),
+            ];
       setSessionGroups(groups);
       setSessionDisplayOrder(order);
     }, 0);
@@ -103,14 +110,46 @@ export default function CollectionsPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  // ★ v2.1: accept value-or-updater (useState setters compose functions natively)
+  // ★ v2.1: group/order changes persist BACK into the collection so groups
+  // survive view switches / page remounts (the session state rebuilds from the
+  // collection data). Updaters compose inside the functional setState — the
+  // persisted value is computed from the latest session state.
+  const persistCollection = useCallback((fn: (c: ModCollection) => ModCollection) => {
+    const store = useCollectionStore.getState();
+    const updated = store.collections.map((c) => (c.id === selected?.id ? fn(c) : c));
+    useCollectionStore.setState({ collections: updated });
+    try {
+      localStorage.setItem("twm-mod-collections", JSON.stringify(updated));
+    } catch { /* ignore */ }
+  }, [selected]);
+
   const setGroups = useCallback(
-    (groups: ModGroup[] | ((prev: ModGroup[]) => ModGroup[])) => setSessionGroups(groups),
-    [],
+    (groups: ModGroup[] | ((prev: ModGroup[]) => ModGroup[])) => {
+      setSessionGroups((prev) => {
+        const next = typeof groups === "function" ? groups(prev) : groups;
+        persistCollection((c) => ({
+          ...c,
+          groups: next.map((g) => ({ name: g.name, modKeys: g.modKeys })),
+          updatedAt: new Date().toISOString(),
+        }));
+        return next;
+      });
+    },
+    [persistCollection],
   );
   const setDisplayOrder = useCallback(
-    (order: string[] | ((prev: string[]) => string[])) => setSessionDisplayOrder(order),
-    [],
+    (order: string[] | ((prev: string[]) => string[])) => {
+      setSessionDisplayOrder((prev) => {
+        const next = typeof order === "function" ? order(prev) : order;
+        persistCollection((c) => ({
+          ...c,
+          displayOrder: next,
+          updatedAt: new Date().toISOString(),
+        }));
+        return next;
+      });
+    },
+    [persistCollection],
   );
 
   // Seed → auto-create a collection from the passed mod keys (once)
@@ -118,7 +157,7 @@ export default function CollectionsPage({
     if (!seed || seed.modKeys.length === 0 || seedHandledRef.current) return;
     seedHandledRef.current = true;
     const col = create({
-      name: `集合 ${new Date().toLocaleDateString("zh-CN")}`,
+      name: dateDefaultName("集合"),
       modKeys: seed.modKeys,
       modMeta: seed.modMeta,
       modSettings: seed.modSettings,
@@ -214,20 +253,22 @@ export default function CollectionsPage({
     [selected],
   );
 
-  const handleRemoveMember = useCallback(
-    (key: string) => {
-      if (!selected) return;
+  // ★ v2.1: remove one or more members (multi-select context menu)
+  const handleRemoveMembers = useCallback(
+    (keys: string[]) => {
+      if (!selected || keys.length === 0) return;
+      const rm = new Set(keys);
       const store = useCollectionStore.getState();
       const updated = store.collections.map((c) =>
         c.id === selected.id
           ? {
               ...c,
-              modKeys: c.modKeys.filter((k) => k !== key),
+              modKeys: c.modKeys.filter((k) => !rm.has(k)),
               enabledMods: c.enabledMods
-                ? c.enabledMods.filter((k) => k !== key)
+                ? c.enabledMods.filter((k) => !rm.has(k))
                 : undefined,
               loadOrder: c.loadOrder
-                ? c.loadOrder.filter((k) => k !== key)
+                ? c.loadOrder.filter((k) => !rm.has(k))
                 : undefined,
               updatedAt: new Date().toISOString(),
             }
@@ -237,8 +278,9 @@ export default function CollectionsPage({
       try {
         localStorage.setItem("twm-mod-collections", JSON.stringify(updated));
       } catch { /* ignore */ }
+      clearSelection();
     },
-    [selected],
+    [selected, clearSelection],
   );
 
   const contextKeys = useMemo(() => (contextMenu ? [contextMenu.key] : []), [contextMenu]);
@@ -369,6 +411,8 @@ export default function CollectionsPage({
             modMenu={{
               schemes: [],
               collections,
+              containerKind: "collection",
+              onRemoveFromCollection: (keys) => handleRemoveMembers(keys),
               onAddToScheme: (name, keys) =>
                 void (async () => {
                   const target = await loadScheme(name);
@@ -445,7 +489,7 @@ export default function CollectionsPage({
           onCreateScheme={() => setLastMessage("请到方案页创建新方案")}
           onCreateCollection={() => setCreateOpen(true)}
           onOpenConfig={() => setConfigModKey(contextMenu.key)}
-          onRemoveFromContainer={() => handleRemoveMember(contextMenu.key)}
+          onRemoveFromContainer={() => handleRemoveMembers(contextKeys)}
         />
       )}
 
@@ -455,7 +499,7 @@ export default function CollectionsPage({
           title="新建集合"
           namePlaceholder="集合名称..."
           showDescription
-          defaultName={`集合 ${new Date().toLocaleDateString("zh-CN")}`}
+          defaultName={dateDefaultName("集合")}
           onSubmit={(name, description) => {
             const col = create({ name, description, modKeys: [], modMeta: {} });
             setSelectedId(col.id);

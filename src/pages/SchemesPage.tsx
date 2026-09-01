@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { listProfiles, deleteProfile, saveProfile } from "../lib/tauriApi";
 import { useAppStore } from "../store/useAppStore";
 import { useCollectionStore } from "../store/useCollectionStore";
@@ -13,6 +14,7 @@ import {
   mergeCollectionIntoScheme,
   ensureLoadOrder,
   sanitizeSchemeName,
+  dateDefaultName,
   type CollectionMergeConflict,
 } from "../utils/schemeMembers";
 import { detectMissingMods } from "../utils/migrateProfile";
@@ -228,14 +230,17 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     });
   }, []);
 
-  const handleRemoveMember = useCallback((key: string) => {
+  // ★ v2.1: remove one or more members (multi-select context menu)
+  const handleRemoveMembers = useCallback((keys: string[]) => {
+    if (keys.length === 0) return;
     setScheme((prev) => {
       if (!prev) return prev;
-      const next = removeModsFromScheme(prev, [key]);
+      const next = removeModsFromScheme(prev, keys);
       void saveScheme(next).catch(() => {});
       return next;
     });
-  }, []);
+    clearSelection();
+  }, [clearSelection]);
 
   // ★ v3: containerized groups / displayOrder (bound to the scheme data)
   // ★ v2.1: accept value-or-updater so sequential multi-key updates compose
@@ -335,11 +340,19 @@ export default function SchemesPage({ mods, onActivate }: Props) {
   const [createSchemeOpen, setCreateSchemeOpen] = useState(false);
   const handleCreateScheme = useCallback(
     async (rawName: string) => {
-      // ★ v2.1: scheme names become file names — strip Windows-invalid chars
+      // ★ v2.1: scheme names become file names — strip Windows-invalid chars,
+      // and ask the user before silently rewriting their input.
       const name = sanitizeSchemeName(rawName);
       if (!name) {
         setLastMessage("方案名称无效（仅含文件名非法字符）");
         return;
+      }
+      if (name !== rawName.trim()) {
+        const ok = await ask(
+          `名称 "${rawName}" 包含文件名非法字符（如 / \\ : * ? " < > |），将以 "${name}" 创建。是否继续？`,
+          { title: "名称含非法字符", kind: "warning" },
+        );
+        if (!ok) return;
       }
       const now = new Date().toISOString();
       const data: ProfileData = {
@@ -359,7 +372,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
         await saveProfile(name, JSON.stringify(data, null, 2));
         setSelectedName(name);
         setLastMessage(
-          name !== rawName
+          name !== rawName.trim()
             ? `方案 "${name}" 已创建（已移除文件名非法字符）`
             : `方案 "${name}" 已创建`,
         );
@@ -564,6 +577,8 @@ export default function SchemesPage({ mods, onActivate }: Props) {
             modMenu={{
               schemes: profiles,
               collections,
+              containerKind: "scheme",
+              onRemoveFromScheme: (keys) => handleRemoveMembers(keys),
               onAddToScheme: (name, keys) => void handleAddToScheme(name, keys),
               onAddToCollection: (id, keys) => handleAddToCollection(id, keys),
               onCreateScheme: () => setCreateSchemeOpen(true),
@@ -640,7 +655,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
         <CreateDialog
           title="新建方案"
           namePlaceholder="方案名称..."
-          defaultName={`方案 ${new Date().toLocaleDateString("zh-CN")}`}
+          defaultName={dateDefaultName("方案")}
           onSubmit={(name) => void handleCreateScheme(name)}
           onClose={() => setCreateSchemeOpen(false)}
         />
@@ -750,7 +765,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
           onCreateCollection={() => {
             setLastMessage("请到集合页新建集合");
           }}
-          onRemoveFromContainer={() => handleRemoveMember(contextMenu.key)}
+          onRemoveFromContainer={() => handleRemoveMembers(contextKeys)}
           onOrderUp={() => handleOrderChange(contextMenu.key, (scheme?.modOrder?.[contextMenu.key] ?? 0) + 1)}
           onOrderDown={() => handleOrderChange(contextMenu.key, Math.max(0, (scheme?.modOrder?.[contextMenu.key] ?? 0) - 1))}
         />

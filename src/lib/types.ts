@@ -174,6 +174,9 @@ export interface ModCollection {
   /** ★ v2.1: member keys in actual LOAD order (independent of groups).
    *  Absent on legacy collections — derived from modOrder values on use. */
   loadOrder?: string[];
+  /** ★ v2.1: session display order (group ids + member keys interleaved),
+   *  persisted so groups/order survive page/view remounts. */
+  displayOrder?: string[];
   /** Mod metadata for missing-mod detection on import */
   modMeta: Record<string, ModMeta>;
   /** Collection schema version */

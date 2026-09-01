@@ -49,10 +49,16 @@ interface Props {
   modMenu?: {
     schemes: { name: string; modCount?: number }[];
     collections: { id: string; name: string }[];
+    /** Which container hosts this list (controls 移出 label / enable menu). */
+    containerKind?: "mods" | "scheme" | "collection";
     onAddToScheme: (schemeName: string, modKeys: string[]) => void;
     onAddToCollection: (collectionId: string, modKeys: string[]) => void;
     onCreateScheme: () => void;
     onCreateCollection: () => void;
+    /** ★ v2.1: remove selected mods from the hosting scheme. */
+    onRemoveFromScheme?: (modKeys: string[]) => void;
+    /** ★ v2.1: remove selected mods from the hosting collection. */
+    onRemoveFromCollection?: (modKeys: string[]) => void;
   };
   /**
    * ★ v3: controlled data source — binds the list to container data
@@ -1152,7 +1158,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
             mod={menuMod}
             schemes={modMenu.schemes}
             collections={modMenu.collections}
-            containerKind="mods"
+            containerKind={modMenu.containerKind ?? "mods"}
             onToggle={(enabled) => handleToggle(mod.fileId, enabled)}
             onOpenConfig={() => onSelectMod(contextMenu.key)}
             onAddToScheme={(name) => modMenu.onAddToScheme(name, [contextMenu.key])}
@@ -1161,6 +1167,13 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
             onCreateCollection={modMenu.onCreateCollection}
             onSetCategories={() => setModPopup({ modKey: contextMenu.key, kind: "category" })}
             onEditNote={() => setModPopup({ modKey: contextMenu.key, kind: "note" })}
+            onRemoveFromContainer={
+              modMenu.onRemoveFromScheme
+                ? () => modMenu.onRemoveFromScheme!([contextMenu.key])
+                : modMenu.onRemoveFromCollection
+                  ? () => modMenu.onRemoveFromCollection!([contextMenu.key])
+                  : undefined
+            }
             onOpenExplorer={() => openInExplorer(mod.dirPath).catch((e) => setLastMessage(String(e)))}
             onOpenWorkshop={() => openSteamWorkshop(mod.fileId).catch((e) => setLastMessage(String(e)))}
           />
@@ -1237,6 +1250,20 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
           onOrderDown={handleBatchOrderDown}
           groups={groups}
           onSaveAsCollection={() => onSaveSelectionAsCollection?.()}
+          onRemoveFromContainer={
+            modMenu?.onRemoveFromScheme
+              ? () => modMenu.onRemoveFromScheme!(selectedModKeys)
+              : modMenu?.onRemoveFromCollection
+                ? () => modMenu.onRemoveFromCollection!(selectedModKeys)
+                : undefined
+          }
+          removeLabel={
+            modMenu?.containerKind === "scheme"
+              ? "移出方案"
+              : modMenu?.containerKind === "collection"
+                ? "移出集合"
+                : undefined
+          }
         />
         );
       })()}

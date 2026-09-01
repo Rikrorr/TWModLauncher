@@ -15,6 +15,10 @@ interface Props {
   groups: ModGroup[];
   /** ★ v2: save the selection as an offline collection */
   onSaveAsCollection: () => void;
+  /** ★ v2.1: remove the selection from the hosting scheme/collection */
+  onRemoveFromContainer?: () => void;
+  /** ★ v2.1: label for the remove item ("移出方案" / "移出集合") */
+  removeLabel?: string;
 }
 
 function MenuItem({
@@ -57,6 +61,8 @@ export default function MultiContextMenu({
   onOrderDown,
   groups,
   onSaveAsCollection,
+  onRemoveFromContainer,
+  removeLabel,
 }: Props) {
   const [sendToOpen, setSendToOpen] = useState(false);
   const sendToRef = useRef<HTMLDivElement>(null);
@@ -159,6 +165,16 @@ export default function MultiContextMenu({
       <MenuItem onClick={() => handleAction(onSaveAsCollection)}>
         保存为集合…
       </MenuItem>
+
+      {/* ★ v2.1: remove from hosting scheme/collection */}
+      {onRemoveFromContainer && removeLabel && (
+        <>
+          <MenuSeparator />
+          <MenuItem onClick={() => handleAction(onRemoveFromContainer)} danger>
+            {removeLabel}
+          </MenuItem>
+        </>
+      )}
     </ContextMenu>
   );
 }
