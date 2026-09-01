@@ -43,6 +43,8 @@ interface Props {
   hideEnabledState?: boolean;
   /** ★ v2.1: hide only the enable/disable switch on cards (e.g. CollectionsPage). */
   hideToggle?: boolean;
+  /** ★ v2.1: hide only the load-order controls on cards (order lives in a load-order view). */
+  hideOrder?: boolean;
   /** ★ v3: when provided, mod context menu uses ModActionMenu (加入/新建 two-level) */
   modMenu?: {
     schemes: { name: string; modCount?: number }[];
@@ -77,7 +79,7 @@ interface Props {
   };
 }
 
-export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollection, modMenu, readOnly, hideEnabledState, hideToggle, controlled }: Props) {
+export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollection, modMenu, readOnly, hideEnabledState, hideToggle, hideOrder, controlled }: Props) {
   // ── Data source: global stores (always called unconditionally) or controlled
   //    container (scheme/collection). Hooks must be unconditional — values are
   //    overridden below when controlled.
@@ -1034,6 +1036,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
                       modTitles={modTitles}
                       hideToggleAndOrder={readOnly}
                       hideToggle={hideToggle}
+                      hideOrder={hideOrder}
                       hideEnabledState={hideEnabledState}
                     />
                   </div>

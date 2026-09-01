@@ -11,6 +11,7 @@ import {
   buildModSettings,
   analyzeCollectionMerge,
   mergeCollectionIntoScheme,
+  ensureLoadOrder,
   type CollectionMergeConflict,
 } from "../utils/schemeMembers";
 import { detectMissingMods } from "../utils/migrateProfile";
@@ -20,6 +21,7 @@ import AddModPanel from "../components/common/AddModPanel";
 import ContainerSelect from "../components/common/ContainerSelect";
 import CreateDialog from "../components/common/CreateDialog";
 import ModList from "../components/ModList/ModList";
+import LoadOrderList from "../components/Scheme/LoadOrderList";
 import SettingsEditor from "../components/SettingsEditor/SettingsEditor";
 import MissingModsDialog from "../components/ProfileManager/MissingModsDialog";
 import { createLogger } from "../lib/logger";
@@ -35,6 +37,8 @@ const log = createLogger("SchemesPage");
 export default function SchemesPage({ mods, onActivate }: Props) {
   const [profiles, setProfiles] = useState<ProfileMeta[]>([]);
   const [scheme, setScheme] = useState<ProfileData | null>(null);
+  // ★ v2.1: scheme display mode — observation (groups) vs load order (flat)
+  const [orderView, setOrderView] = useState<"observation" | "load">("observation");
   const [addOpen, setAddOpen] = useState(false);
   const [missingMods, setMissingMods] = useState<Map<string, ModMeta> | null>(null);
   const [pendingActivate, setPendingActivate] = useState<ProfileData | null>(null);
@@ -110,6 +114,14 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     [mods, memberSet],
   );
 
+  // ★ v2.1: effective member load sequence (migrates legacy schemes on first use)
+  const effectiveLoadOrder = useMemo(() => (scheme ? ensureLoadOrder(scheme) : []), [scheme]);
+  const loadPosMap = useMemo(() => {
+    const map = new Map<string, number>();
+    effectiveLoadOrder.forEach((k, i) => map.set(k, i + 1));
+    return map;
+  }, [effectiveLoadOrder]);
+
   // Member display mods — overlay scheme's enabled/order on ModInfo
   const displayMods = useMemo(
     () =>
@@ -118,7 +130,8 @@ export default function SchemesPage({ mods, onActivate }: Props) {
         return {
           ...m,
           enabled: (scheme?.enabledMods ?? []).includes(key),
-          order: scheme?.modOrder?.[key] ?? 0,
+          // ★ v2.1: derived order = position in the load sequence (legacy modOrder no longer edited)
+          order: loadPosMap.get(key) ?? 0,
           // ★ v3: show the scheme's settings snapshot (falls back to read-mods base)
           currentSettings:
             (scheme?.modSettings?.[key] && Object.keys(scheme.modSettings[key]).length > 0)
@@ -126,8 +139,16 @@ export default function SchemesPage({ mods, onActivate }: Props) {
               : m.currentSettings,
         };
       }),
-    [memberMods, scheme],
+    [memberMods, scheme, loadPosMap],
   );
+
+  // Members rendered in load sequence (for the load-order view)
+  const loadMods = useMemo(() => {
+    const byKey = new Map(displayMods.map((m) => [`${m.source}_${m.fileId}`, m]));
+    return effectiveLoadOrder
+      .map((k) => byKey.get(k))
+      .filter((m): m is ModInfo => m !== undefined);
+  }, [displayMods, effectiveLoadOrder]);
 
   // ★ v3: effective displayOrder — ensure every member key is present so
   // drag-to-reorder works even for schemes created before displayOrder was tracked.
@@ -169,12 +190,39 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     [modKeyForFileId],
   );
 
+  // ★ v2.1: order mutations reposition the member within the load sequence
   const handleOrderChange = useCallback((key: string, order: number) => {
     setScheme((prev) => {
       if (!prev) return prev;
-      const next = { ...prev, modOrder: { ...(prev.modOrder ?? {}), [key]: order } };
-      void saveScheme(next).catch(() => {});
-      return next;
+      const cur = ensureLoadOrder(prev);
+      const from = cur.indexOf(key);
+      if (from === -1) return prev;
+      const to = Math.max(0, Math.min(cur.length - 1, order));
+      if (to === from) return prev;
+      const next = [...cur];
+      next.splice(from, 1);
+      next.splice(to, 0, key);
+      const out = { ...prev, loadOrder: next };
+      void saveScheme(out).catch(() => {});
+      return out;
+    });
+  }, []);
+
+  // ★ v2.1: move a member one slot up/down in the load sequence
+  const handleLoadMove = useCallback((key: string, delta: -1 | 1) => {
+    setScheme((prev) => {
+      if (!prev) return prev;
+      const cur = ensureLoadOrder(prev);
+      const from = cur.indexOf(key);
+      if (from === -1) return prev;
+      const to = Math.max(0, Math.min(cur.length - 1, from + delta));
+      if (to === from) return prev;
+      const next = [...cur];
+      next.splice(from, 1);
+      next.splice(to, 0, key);
+      const out = { ...prev, loadOrder: next };
+      void saveScheme(out).catch(() => {});
+      return out;
     });
   }, []);
 
@@ -393,6 +441,34 @@ export default function SchemesPage({ mods, onActivate }: Props) {
           }
         />
 
+        {/* ★ v2.1: display-mode toggle — observation (groups) vs load order (flat) */}
+        {scheme && (
+          <div className="flex items-center border border-slate-600 rounded overflow-hidden shrink-0">
+            <button
+              onClick={() => setOrderView("observation")}
+              title="按分组浏览成员"
+              className={`text-xs px-2.5 py-1 cursor-pointer transition-colors ${
+                orderView === "observation"
+                  ? "bg-blue-600 text-white"
+                  : "bg-slate-800 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              观测
+            </button>
+            <button
+              onClick={() => setOrderView("load")}
+              title="按实际加载顺序排列（独立于分组）"
+              className={`text-xs px-2.5 py-1 cursor-pointer transition-colors ${
+                orderView === "load"
+                  ? "bg-blue-600 text-white"
+                  : "bg-slate-800 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              加载
+            </button>
+          </div>
+        )}
+
         {scheme && (
           <button
             onClick={() => void handleActivate()}
@@ -436,16 +512,24 @@ export default function SchemesPage({ mods, onActivate }: Props) {
         )}
       </div>
 
-      {/* Member list — reused filter/view/card stack */}
+      {/* Member list — observation (groups) or load order (flat) */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {!scheme ? (
           <div className="flex-1 flex items-center justify-center">
             <p className="text-sm text-slate-500">从上方选择一个方案查看成员</p>
           </div>
+        ) : orderView === "load" ? (
+          <LoadOrderList
+            mods={loadMods}
+            onMoveUp={(key) => handleLoadMove(key, -1)}
+            onMoveDown={(key) => handleLoadMove(key, 1)}
+            onToggle={handleToggleMember}
+          />
         ) : (
           <ModList
             saving={false}
             onSelectMod={(key) => setConfigModKey(key)}
+            hideOrder
             controlled={{
               mods: displayMods,
               groups: scheme.groups ?? [],

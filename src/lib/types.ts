@@ -134,6 +134,9 @@ export interface ProfileData {
   modCategories?: Record<string, string[]>;
   /** ★ v2: Per-scheme user notes (propagated on export/share) */
   modNotes?: Record<string, string>;
+  /** ★ v2.1: member keys in actual LOAD order (independent of displayOrder/groups).
+   *  Absent on legacy schemes — derived from modOrder/displayOrder on use. */
+  loadOrder?: string[];
 }
 
 /** v1 legacy profile shape (for migration) */

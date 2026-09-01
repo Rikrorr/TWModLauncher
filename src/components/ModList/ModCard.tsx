@@ -35,6 +35,8 @@ interface Props {
   hideToggleAndOrder?: boolean;
   /** ★ hide only the enable/disable switch (e.g. CollectionsPage — no enable semantics). */
   hideToggle?: boolean;
+  /** ★ hide only the load-order controls (▲/input/▼) — order lives elsewhere. */
+  hideOrder?: boolean;
   /** ★ render the card without enabled/disabled visual differentiation
    *  (pool/browse pages like ModsPage, CollectionsPage, AddModPanel). */
   hideEnabledState?: boolean;
@@ -63,6 +65,7 @@ export default function ModCard({
   modTitles,
   hideToggleAndOrder,
   hideToggle,
+  hideOrder,
   hideEnabledState,
 }: Props) {
   const [localOrder, setLocalOrder] = useState(mod.order);
@@ -211,6 +214,7 @@ export default function ModCard({
         {/* 8+9. Order controls + Toggle — hidden in browse-only mode */}
         {!hideToggleAndOrder && (
           <>
+        {!hideOrder && (
         <div
           className="flex items-center gap-0.5 shrink-0"
           onClick={(e) => e.stopPropagation()}
@@ -268,6 +272,7 @@ export default function ModCard({
             ▼
           </button>
         </div>
+        )}
 
         {/* 9. Toggle — hidden when hideToggle (collections: no enable semantics) */}
         {!hideToggle && (
@@ -508,7 +513,8 @@ export default function ModCard({
         </label>
         )}
 
-        {/* Order controls */}
+        {/* Order controls — hidden when hideOrder (order lives in load-order view) */}
+        {!hideOrder && (
         <div className="flex flex-col items-center gap-0.5">
           <button
             onClick={onOrderUp}
@@ -564,6 +570,7 @@ export default function ModCard({
             ▼
           </button>
         </div>
+        )}
           </>
         )}
 

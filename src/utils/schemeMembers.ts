@@ -25,18 +25,22 @@ export function addModsToScheme(
   const memberSet = new Set(data.modKeys ?? []);
   const enabledSet = new Set(data.enabledMods ?? []);
   const displayOrder = [...(data.displayOrder ?? [])];
+  const loadOrder = [...(data.loadOrder ?? [])];
   for (const k of modKeys) {
     const isNew = !memberSet.has(k);
     memberSet.add(k);
     enabledSet.add(k); // newly added mods are enabled by default
     // Append new members to the unified displayOrder (group ids preserved)
     if (isNew && !displayOrder.includes(k)) displayOrder.push(k);
+    // Append new members to the load order as well
+    if (isNew && !loadOrder.includes(k)) loadOrder.push(k);
   }
   return {
     ...data,
     modKeys: [...memberSet],
     enabledMods: [...enabledSet],
     displayOrder,
+    loadOrder,
     modMeta: { ...(data.modMeta ?? {}), ...modMeta },
     modSettings: modSettings
       ? { ...(data.modSettings ?? {}), ...modSettings }
@@ -77,6 +81,7 @@ export function removeModsFromScheme(data: ProfileData, modKeys: string[]): Prof
     ...data,
     modKeys: (data.modKeys ?? []).filter((k) => !rm.has(k)),
     enabledMods: (data.enabledMods ?? []).filter((k) => !rm.has(k)),
+    loadOrder: (data.loadOrder ?? []).filter((k) => !rm.has(k)),
     modOrder,
     modSettings,
     groups,
@@ -103,6 +108,55 @@ export function buildModMeta(mods: ModInfo[], keys: string[]): ProfileData["modM
 /** Persist a scheme back to disk. */
 export async function saveScheme(data: ProfileData): Promise<void> {
   await saveProfile(data.name, JSON.stringify(data, null, 2));
+}
+
+// ── ★ v2.1: independent load order ──────────────────────────────────────────
+
+/**
+ * Effective member load sequence for a scheme. Legacy schemes (no loadOrder)
+ * migrate on first use: existing loadOrder filtered to members, then missing
+ * members appended sorted by modOrder values, then displayOrder order.
+ */
+export function ensureLoadOrder(
+  scheme: Pick<ProfileData, "modKeys"> & {
+    loadOrder?: string[];
+    modOrder?: Record<string, number>;
+    displayOrder?: string[];
+  },
+): string[] {
+  const members = scheme.modKeys ?? [];
+  const existing = (scheme.loadOrder ?? []).filter((k) => members.includes(k));
+  const missing = members.filter((k) => !existing.includes(k));
+  if (missing.length === 0) return existing;
+  const orderMap = scheme.modOrder ?? {};
+  const remaining = [...missing].sort((a, b) => {
+    const oa = orderMap[a];
+    const ob = orderMap[b];
+    if (oa !== undefined && ob !== undefined) return oa - ob;
+    if (oa !== undefined) return -1;
+    if (ob !== undefined) return 1;
+    const da = (scheme.displayOrder ?? []).indexOf(a);
+    const db = (scheme.displayOrder ?? []).indexOf(b);
+    if (da !== -1 && db !== -1) return da - db;
+    if (da !== -1) return -1;
+    if (db !== -1) return 1;
+    return 0;
+  });
+  return [...existing, ...remaining];
+}
+
+/**
+ * Dense 1..N order map over ALL read mod keys: scheme members follow their load
+ * sequence first, remaining keys after by base order. Mirrors the game's own
+ * renumbering so the relative load order survives.
+ */
+export function buildLoadOrderMap(
+  allModKeys: string[],
+  scheme: Pick<ProfileData, "modKeys" | "loadOrder"> | null,
+): Map<string, number> {
+  const seq = scheme ? ensureLoadOrder(scheme) : allModKeys;
+  const full = [...seq, ...allModKeys.filter((k) => !seq.includes(k))];
+  return new Map(full.map((k, i) => [k, i + 1]));
 }
 
 // ── Merge collection into scheme (with conflict analysis) ─────────────────
@@ -216,11 +270,18 @@ export function mergeCollectionIntoScheme(
     if (!mergedDisplayOrder.includes(mk)) mergedDisplayOrder.push(mk);
   }
 
+  // 6. ★ v2.1: load order — keep existing member sequence, append newly added members
+  const mergedLoadOrder = [...(scheme.loadOrder ?? [])];
+  for (const mk of [...memberSet]) {
+    if (!mergedLoadOrder.includes(mk)) mergedLoadOrder.push(mk);
+  }
+
   return {
     ...scheme,
     modKeys: [...memberSet],
     enabledMods: [...enabledSet],
     displayOrder: mergedDisplayOrder,
+    loadOrder: mergedLoadOrder,
     modMeta: { ...(scheme.modMeta ?? {}), ...(collection.modMeta ?? {}) },
     modSettings: mergedSettings,
     groups: newGroups,

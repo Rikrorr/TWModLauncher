@@ -16,7 +16,7 @@ import {
   listProfiles,
 } from "./lib/tauriApi";
 import { collectModSettingsData, patchModSettingsLua, generateModSettingsLua, generateSettingsLua } from "./utils/generateModSettings";
-import { loadScheme } from "./utils/schemeMembers";
+import { loadScheme, buildLoadOrderMap } from "./utils/schemeMembers";
 import { useAppStore } from "./store/useAppStore";
 import { useModStore } from "./store/useModStore";
 import { useCategoryStore } from "./store/useCategoryStore";
@@ -339,14 +339,16 @@ function App() {
       if (scheme) {
         const memberSet = new Set(scheme.modKeys ?? []);
         const enabledSet = new Set(scheme.enabledMods);
-        const orderMap = scheme.modOrder ?? {};
+        // ★ v2.1: dense 1..N over ALL read mods from the scheme load order
+        const allKeys = currentMods.map((m) => `${m.source}_${m.fileId}`);
+        const loadPos = buildLoadOrderMap(allKeys, scheme);
         const synced = currentMods.map((m) => {
           const key = `${m.source}_${m.fileId}`;
           const inScheme = memberSet.has(key);
           return {
             ...m,
             enabled: inScheme && enabledSet.has(key),
-            order: inScheme ? (orderMap[key] ?? m.order) : 0,
+            order: loadPos.get(key) ?? m.order,
           };
         });
         data = collectModSettingsData(synced);
@@ -407,7 +409,6 @@ function App() {
     // ★ v2: member whitelist — scheme-outside mods are forced disabled
     const memberSet = new Set(data.modKeys ?? []);
     const enabledSet = new Set(data.enabledMods);
-    const orderMap = data.modOrder ?? {};
 
     // ★ v2.1: activation no longer mutates any global display state
     // (mods / groups / categories / notes stay the pristine read-mods "default config",
@@ -423,14 +424,17 @@ function App() {
     }
     try {
       const currentMods = useModStore.getState().mods;
-      // Build the scheme's enabled/order view for ModSettings.Lua
+      // ★ v2.1: dense 1..N over ALL read mods from the scheme load order —
+      // mirrors the game own renumbering so the relative load order survives.
+      const allKeys = currentMods.map((m) => `${m.source}_${m.fileId}`);
+      const loadPos = buildLoadOrderMap(allKeys, data);
       const synced = currentMods.map((m) => {
         const key = `${m.source}_${m.fileId}`;
         const inScheme = memberSet.has(key);
         return {
           ...m,
           enabled: inScheme && enabledSet.has(key),
-          order: inScheme ? (orderMap[key] ?? m.order) : 0,
+          order: loadPos.get(key) ?? m.order,
         };
       });
       const sd = collectModSettingsData(synced);
