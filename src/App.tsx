@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { open, ask } from "@tauri-apps/plugin-dialog";
+import { open, ask, message } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -41,6 +41,7 @@ function App() {
   const setError = useAppStore((s) => s.setError);
   const clearPath = useAppStore((s) => s.clearPath);
   const setLastMessage = useAppStore((s) => s.setLastMessage);
+  const lastMessage = useAppStore((s) => s.lastMessage);
   const templateRaw = useAppStore((s) => s.templateRaw);
   const setDirty = useAppStore((s) => s.setDirty);
 
@@ -517,8 +518,10 @@ function App() {
 
   const handleSchemeDraftConfirm = useCallback(async () => {
     if (!schemeDraft) return;
-    const name = schemeDraft.name.trim();
-    if (!name) return;
+    const rawName = schemeDraft.name.trim();
+    if (!rawName) return;
+    // Windows filename safety: strip characters invalid in file names.
+    const name = rawName.replace(/[\\\\/:*?"<>|]/g, "").trim();
     const col = useCollectionStore.getState().collections.find(
       (c) => c.id === schemeDraft.collectionId,
     );
@@ -526,57 +529,60 @@ function App() {
       setSchemeDraft(null);
       return;
     }
-    const now = new Date().toISOString();
-    const groupEntries = (col.groups ?? []).map((g, i) => ({
-      id: `col-group-${col.id.slice(0, 8)}-${i}`,
-      name: g.name,
-      collapsed: false,
-      modKeys: g.modKeys,
-    }));
-    const data: ProfileData = {
-      version: 2,
-      name,
-      createdAt: now,
-      gamePath: useAppStore.getState().gamePath ?? "",
-      modKeys: col.modKeys,
-      enabledMods: col.enabledMods ?? [...col.modKeys],
-      modOrder: {},
-      // ★ v3: carry the collection per-mod settings snapshot into the new scheme
-      modSettings: col.modSettings ?? {},
-      groups: groupEntries,
-      displayOrder: [
-        ...groupEntries.map((g) => g.id),
-        ...col.modKeys.filter((k) => !groupEntries.some((g) => g.modKeys.includes(k))),
-      ],
-      modMeta: col.modMeta ?? {},
-    };
-    const catStore = useCategoryStore.getState();
-    const noteStore = useNoteStore.getState();
-    const saveData: ProfileData = {
-      ...data,
-      modCategories: Object.fromEntries(
-        Object.keys(data.modMeta ?? {})
-          .filter((k) => (catStore.modCats[k] ?? []).length > 0)
-          .map((k) => [k, catStore.modCats[k]]),
-      ),
-      modNotes: Object.fromEntries(
-        Object.keys(data.modMeta ?? {})
-          .filter((k) => noteStore.notes[k]?.trim())
-          .map((k) => [k, noteStore.notes[k].trim()]),
-      ),
-    };
-    // ★ v2.1: persist FIRST (awaited, errors visible), then activate + navigate —
-    // the Schemes page mounts after the file exists, so the new scheme shows up.
     setSchemeDraft(null);
     try {
+      const now = new Date().toISOString();
+      const groupEntries = (col.groups ?? []).map((g, i) => ({
+        id: `col-group-${col.id.slice(0, 8)}-${i}`,
+        name: g.name,
+        collapsed: false,
+        modKeys: g.modKeys,
+      }));
+      const data: ProfileData = {
+        version: 2,
+        name,
+        createdAt: now,
+        gamePath: useAppStore.getState().gamePath ?? "",
+        modKeys: col.modKeys,
+        enabledMods: col.enabledMods ?? [...col.modKeys],
+        modOrder: {},
+        modSettings: col.modSettings ?? {},
+        groups: groupEntries,
+        displayOrder: [
+          ...groupEntries.map((g) => g.id),
+          ...col.modKeys.filter((k) => !groupEntries.some((g) => g.modKeys.includes(k))),
+        ],
+        modMeta: col.modMeta ?? {},
+      };
+      const catStore = useCategoryStore.getState();
+      const noteStore = useNoteStore.getState();
+      const saveData: ProfileData = {
+        ...data,
+        modCategories: Object.fromEntries(
+          Object.keys(data.modMeta ?? {})
+            .filter((k) => (catStore.modCats[k] ?? []).length > 0)
+            .map((k) => [k, catStore.modCats[k]]),
+        ),
+        modNotes: Object.fromEntries(
+          Object.keys(data.modMeta ?? {})
+            .filter((k) => noteStore.notes[k]?.trim())
+            .map((k) => [k, noteStore.notes[k].trim()]),
+        ),
+      };
+      // ★ v2.1: persist FIRST (awaited, errors visible), then activate + navigate
       await saveProfile(name, JSON.stringify(saveData, null, 2));
+      handleProfileLoad(data);
+      setCurrentPage("schemes");
+      setLastMessage(
+        name !== rawName
+          ? `已从集合 "${col.name}" 创建方案 "${name}"（已移除文件名非法字符）`
+          : `已从集合 "${col.name}" 创建方案 "${name}"`,
+      );
     } catch (e) {
-      setLastMessage(`方案 "${name}" 保存失败: ${String(e)}`);
-      return;
+      const msg = `方案 "${rawName}" 保存失败: ${String(e)}`;
+      setLastMessage(msg);
+      void message(msg, { title: "创建方案失败", kind: "error" });
     }
-    handleProfileLoad(data);
-    setCurrentPage("schemes");
-    setLastMessage(`已从集合 "${col.name}" 创建方案 "${name}"`);
   }, [handleProfileLoad, setLastMessage, schemeDraft]);
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-slate-100">
@@ -701,6 +707,11 @@ function App() {
         )}
         {detecting && (
           <span className="ml-auto text-blue-400">正在验证...</span>
+        )}
+        {lastMessage && (
+          <span className="ml-auto truncate text-slate-300" title={lastMessage}>
+            {lastMessage}
+          </span>
         )}
       </footer>
 
