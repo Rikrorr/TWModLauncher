@@ -236,19 +236,22 @@ export default function SchemesPage({ mods, onActivate }: Props) {
   }, []);
 
   // ★ v3: containerized groups / displayOrder (bound to the scheme data)
-  const handleGroupsChange = useCallback((groups: ModGroup[]) => {
+  // ★ v2.1: accept value-or-updater so sequential multi-key updates compose
+  const handleGroupsChange = useCallback((groups: ModGroup[] | ((prev: ModGroup[]) => ModGroup[])) => {
     setScheme((prev) => {
       if (!prev) return prev;
-      const next = { ...prev, groups };
+      const nextGroups = typeof groups === "function" ? groups(prev.groups ?? []) : groups;
+      const next = { ...prev, groups: nextGroups };
       void saveScheme(next).catch(() => {});
       return next;
     });
   }, []);
 
-  const handleDisplayOrderChange = useCallback((displayOrder: string[]) => {
+  const handleDisplayOrderChange = useCallback((displayOrder: string[] | ((prev: string[]) => string[])) => {
     setScheme((prev) => {
       if (!prev) return prev;
-      const next = { ...prev, displayOrder };
+      const nextOrder = typeof displayOrder === "function" ? displayOrder(prev.displayOrder ?? []) : displayOrder;
+      const next = { ...prev, displayOrder: nextOrder };
       void saveScheme(next).catch(() => {});
       return next;
     });

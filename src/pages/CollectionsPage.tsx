@@ -100,8 +100,15 @@ export default function CollectionsPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  const setGroups = useCallback((groups: ModGroup[]) => setSessionGroups(groups), []);
-  const setDisplayOrder = useCallback((order: string[]) => setSessionDisplayOrder(order), []);
+  // ★ v2.1: accept value-or-updater (useState setters compose functions natively)
+  const setGroups = useCallback(
+    (groups: ModGroup[] | ((prev: ModGroup[]) => ModGroup[])) => setSessionGroups(groups),
+    [],
+  );
+  const setDisplayOrder = useCallback(
+    (order: string[] | ((prev: string[]) => string[])) => setSessionDisplayOrder(order),
+    [],
+  );
 
   // Seed → auto-create a collection from the passed mod keys (once)
   useEffect(() => {

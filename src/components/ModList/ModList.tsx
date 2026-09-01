@@ -64,8 +64,9 @@ interface Props {
     mods: ModInfo[];
     groups: ModGroup[];
     displayOrder: string[];
-    setGroups: (groups: ModGroup[]) => void;
-    setDisplayOrder: (order: string[]) => void;
+    /** Accepts a value or an updater — composed sequentially for multi-key ops. */
+    setGroups: (groups: ModGroup[] | ((prev: ModGroup[]) => ModGroup[])) => void;
+    setDisplayOrder: (order: string[] | ((prev: string[]) => string[])) => void;
     toggleMod: (fileId: number, enabled: boolean) => void;
     setModOrder: (key: string, order: number) => void;
     clearSelection: () => void;
@@ -117,9 +118,10 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     (updater: ModGroup[] | ((prev: ModGroup[]) => ModGroup[])) => {
       const c = controlledRef.current;
       if (c) {
-        const next =
-          typeof updater === "function" ? updater(c.groups) : updater;
-        c.setGroups(next);
+        // ★ v2.1: pass the updater THROUGH so sequential multi-key updates
+        // compose against the latest state (evaluating against c.groups here
+        // would compute every call from the same stale snapshot).
+        c.setGroups(updater);
       } else {
         storeSetGroups(updater);
       }
@@ -171,9 +173,8 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     (updater) => {
       const c = controlledRef.current;
       if (c) {
-        const next =
-          typeof updater === "function" ? updater(c.displayOrder) : updater;
-        c.setDisplayOrder(next);
+        // ★ v2.1: pass through so sequential updates compose (see setGroups)
+        c.setDisplayOrder(updater);
       } else {
         filter.setDisplayOrder(updater);
       }
