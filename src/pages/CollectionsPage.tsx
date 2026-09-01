@@ -4,6 +4,7 @@ import { useAppStore } from "../store/useAppStore";
 import { loadScheme, addModsToScheme, saveScheme, buildModMeta, buildModSettings, ensureLoadOrder } from "../utils/schemeMembers";
 import type { ModGroup, ModInfo, ModMeta } from "../lib/types";
 import ModList from "../components/ModList/ModList";
+import LoadOrderList from "../components/Scheme/LoadOrderList";
 import ModActionMenu from "../components/common/ModActionMenu";
 import AddModPanel from "../components/common/AddModPanel";
 import ContainerSelect from "../components/common/ContainerSelect";
@@ -36,6 +37,8 @@ export default function CollectionsPage({
   const selectedId = useAppStore((s) => s.collectionEditId);
   const setSelectedId = useAppStore((s) => s.setCollectionEditId);
   const [addOpen, setAddOpen] = useState(false);
+  // ★ v2.1: collection display mode — observation (groups) vs load order (flat)
+  const [orderView, setOrderView] = useState<"observation" | "load">("observation");
   const [contextMenu, setContextMenu] = useState<{
     x: number; y: number; key: string; mod: ModInfo;
   } | null>(null);
@@ -156,6 +159,13 @@ export default function CollectionsPage({
         }),
     [mods, memberSet, selected, colLoadPosMap],
   );
+  // Members rendered in load sequence (for the load-order view)
+  const colLoadMods = useMemo(() => {
+    const byKey = new Map(memberMods.map((m) => [`${m.source}_${m.fileId}`, m]));
+    return colLoadOrder
+      .map((k) => byKey.get(k))
+      .filter((m): m is ModInfo => m !== undefined);
+  }, [memberMods, colLoadOrder]);
 
   // ★ v2.1: toggle a member's enable state — writes ONLY the collection's own
   // enabledMods (never the active scheme / global mod state).
@@ -281,6 +291,31 @@ export default function CollectionsPage({
 
         {selected && (
           <>
+            {/* ★ v2.1: display-mode toggle — observation (groups) vs load order (flat) */}
+            <div className="flex items-center border border-slate-600 rounded overflow-hidden shrink-0">
+              <button
+                onClick={() => setOrderView("observation")}
+                title="按分组浏览成员"
+                className={`text-xs px-2.5 py-1 cursor-pointer transition-colors ${
+                  orderView === "observation"
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                观测
+              </button>
+              <button
+                onClick={() => setOrderView("load")}
+                title="按实际加载顺序排列（独立于分组）"
+                className={`text-xs px-2.5 py-1 cursor-pointer transition-colors ${
+                  orderView === "load"
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                加载
+              </button>
+            </div>
             <button
               onClick={() => onCreateSchemeFromCollection(selected.id)}
               className="text-xs px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded cursor-pointer"
@@ -302,6 +337,14 @@ export default function CollectionsPage({
           <div className="flex-1 flex items-center justify-center">
             <p className="text-sm text-slate-500">从上方选择一个集合查看成员</p>
           </div>
+        ) : orderView === "load" ? (
+          <LoadOrderList
+            mods={colLoadMods}
+            onMoveUp={(key) => handleOrderChange(key, (colLoadPosMap.get(key) ?? 1) - 1)}
+            onMoveDown={(key) => handleOrderChange(key, (colLoadPosMap.get(key) ?? 1) + 1)}
+            onMoveToPosition={(key, pos) => handleOrderChange(key, pos)}
+            onToggle={handleToggleMember}
+          />
         ) : (
           <ModList
             saving={false}
