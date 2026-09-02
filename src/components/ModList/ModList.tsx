@@ -340,13 +340,13 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     for (const m of selected) {
       useModStore.getState().toggleMod(m.fileId, newEnabled);
     }
-    setDirty(true);
+    if (!controlled) setDirty(true);
   }, [selectedModKeys, setDirty]);
 
   const handleBatchSendToGroup = useCallback(
     (targetGroupId: string) => {
       moveKeysToGroup(selectedModKeys, targetGroupId);
-      setDirty(true);
+      if (!controlled) setDirty(true);
       clearSelection();
     },
     [selectedModKeys, moveKeysToGroup, setDirty, clearSelection],
@@ -369,7 +369,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       }
       return next;
     });
-    setDirty(true);
+    if (!controlled) setDirty(true);
   }, [selectedModKeys, setDisplayOrder, setDirty]);
 
   const handleBatchOrderDown = useCallback(() => {
@@ -389,7 +389,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       }
       return next;
     });
-    setDirty(true);
+    if (!controlled) setDirty(true);
   }, [selectedModKeys, setDisplayOrder, setDirty]);
 
   // modKey → group lookup
@@ -496,7 +496,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       }
       clearSelection();
       setModOrder(key, order);
-      setDirty(true);
+      if (!controlled) setDirty(true);
     },
     [setModOrder, setDirty, clearSelection, activeSchemeModKeys, setLastMessage, readOnly, controlled],
   );
@@ -547,7 +547,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     }
 
     for (const [key, order] of updates) setModOrder(key, order);
-    setDirty(true);
+    if (!controlled) setDirty(true);
     setLastMessage(`已应用加载顺序 — ${updates.length} 个已启用 Mod 从 0 递增`);
   }, [displayOrder, groups, modGroupMap, setModOrder, setDirty, setLastMessage]);
 
@@ -613,7 +613,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
       }
       clearSelection();
       toggleMod(fileId, enabled);
-      setDirty(true);
+      if (!controlled) setDirty(true);
     },
     [toggleMod, setDirty, clearSelection, activeSchemeModKeys, setLastMessage, readOnly, controlled],
   );
@@ -1025,14 +1025,14 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
                         clearSelection();
                         // ★ v2.1: position semantics — up = earlier (position -1)
                         setModOrder(item.key, Math.max(1, mod.order - 1));
-                        setDirty(true);
+                        if (!controlled) setDirty(true);
                       }}
                       onOrderDown={(e) => {
                         e.stopPropagation();
                         clearSelection();
                         // ★ v2.1: position semantics — down = later (position +1)
                         setModOrder(item.key, mod.order + 1);
-                        setDirty(true);
+                        if (!controlled) setDirty(true);
                       }}
                       onOrderChange={(order) => handleOrderChange(item.key, order)}
                       onOrderFocus={() => clearSelection()}
@@ -1118,7 +1118,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
                               onClick={() => {
                                 // Add to scheme: enable mod + join member set
                                 toggleMod(m.fileId, true);
-                                setDirty(true);
+                                if (!controlled) setDirty(true);
                                 setActiveSchemeModKeys?.([...(activeSchemeModKeys ?? []), key]);
                               }}
                               className="text-[10px] px-2 py-0.5 bg-blue-600 hover:bg-blue-500
@@ -1199,13 +1199,13 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
               clearSelection();
               // ★ v2.1: position semantics — up = earlier (position -1)
               setModOrder(contextMenu.key, Math.max(1, mod.order - 1));
-              setDirty(true);
+              if (!controlled) setDirty(true);
             }}
             onOrderDown={() => {
               clearSelection();
               // ★ v2.1: position semantics — down = later (position +1)
               setModOrder(contextMenu.key, mod.order + 1);
-              setDirty(true);
+              if (!controlled) setDirty(true);
             }}
             onOpenInExplorer={() => openInExplorer(mod.dirPath).catch((e) => setLastMessage(String(e)))}
             onOpenWorkshop={() => openSteamWorkshop(mod.fileId).catch((e) => setLastMessage(String(e)))}

@@ -178,9 +178,11 @@ function App() {
   const handleLaunch = async () => {
     if (!gamePath || gameRunning) return;
     setLaunchError(null);
-    // ★ v2: safety gate — auto-sync unsaved changes before launching
-    if (useAppStore.getState().isDirty) {
-      setLastMessage("检测到未保存的更改，先同步再启动...");
+    // ★ v2.1: sync on launch when there are real unsaved edits OR an active
+    // scheme (its members were auto-saved to the file; launch applies them).
+    const app = useAppStore.getState();
+    if (app.isDirty || app.activeSchemeName) {
+      if (app.isDirty) setLastMessage("检测到未保存的更改，先同步再启动...");
       await handleSaveAll();
     }
     try {
@@ -194,9 +196,10 @@ function App() {
   const handleLaunchSteam = async () => {
     if (gameRunning) return;
     setLaunchError(null);
-    // ★ v2: safety gate — auto-sync unsaved changes before launching
-    if (useAppStore.getState().isDirty) {
-      setLastMessage("检测到未保存的更改，先同步再启动...");
+    // ★ v2.1: sync on launch when there are real unsaved edits OR an active scheme
+    const app = useAppStore.getState();
+    if (app.isDirty || app.activeSchemeName) {
+      if (app.isDirty) setLastMessage("检测到未保存的更改，先同步再启动...");
       await handleSaveAll();
     }
     try {
