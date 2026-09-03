@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "TWModLauncher",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "identifier": "com.twmodlauncher.app",
   "build": {
     "frontendDist": "../dist",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "TWModLauncher v2.0.0.0",
+        "title": "TWModLauncher v2.0.1.0",
         "width": 1200,
         "height": 800,
         "resizable": true,
