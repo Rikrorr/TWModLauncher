@@ -119,6 +119,16 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     [mods, memberSet],
   );
 
+  // ★ v2.1: hide groups whose members reference mods not installed in this client
+  const clientModKeys = useMemo(
+    () => new Set(mods.map((m) => `${m.source}_${m.fileId}`)),
+    [mods],
+  );
+  const visibleGroups = useMemo(
+    () => (scheme?.groups ?? []).filter((g) => g.modKeys.some((k) => clientModKeys.has(k))),
+    [scheme, clientModKeys],
+  );
+
   // ★ v2.1: effective member load sequence (migrates legacy schemes on first use)
   const effectiveLoadOrder = useMemo(() => (scheme ? ensureLoadOrder(scheme) : []), [scheme]);
   const loadPosMap = useMemo(() => {
@@ -478,6 +488,8 @@ export default function SchemesPage({ mods, onActivate }: Props) {
         if (!ok) return;
       }
       await saveProfile(normalized.name, JSON.stringify(normalized, null, 2));
+      // ★ v2.1: switch to the imported scheme directly
+      setSelectedName(normalized.name);
       const missing = detectMissingMods(normalized, mods);
       if (missing.size > 0) {
         setImportMissingMods(missing);
@@ -489,7 +501,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     } catch (e) {
       setLastMessage(`导入失败: ${String(e)}`);
     }
-  }, [profiles, mods, setLastMessage, refresh]);
+  }, [profiles, mods, setLastMessage, refresh, setSelectedName]);
 
   // ★ v3: "＋ 添加" menu — add mods or merge a whole collection
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -567,15 +579,15 @@ export default function SchemesPage({ mods, onActivate }: Props) {
           onSelect={(name) => setSelectedName(name)}
           onDelete={(name) => void handleDelete(name)}
           headerAction={(close) => (
-            <div className="px-2 py-1 border-b border-slate-700 space-y-0.5">
+            <div className="px-2 py-1.5 border-b border-slate-700 flex gap-1">
               <button
                 onClick={() => {
                   close();
                   setCreateSchemeOpen(true);
                 }}
-                className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-slate-700/70 transition-colors"
+                className="flex-1 px-1.5 py-1 text-xs text-center text-blue-400 hover:bg-slate-700/70 transition-colors"
               >
-                + 新建方案
+                新建
               </button>
               <button
                 onClick={() => {
@@ -583,18 +595,18 @@ export default function SchemesPage({ mods, onActivate }: Props) {
                   void handleExportScheme();
                 }}
                 disabled={!selectedName}
-                className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/70 disabled:text-slate-600 disabled:hover:bg-transparent transition-colors"
+                className="flex-1 px-1.5 py-1 text-xs text-center text-slate-300 hover:bg-slate-700/70 disabled:text-slate-600 disabled:hover:bg-transparent transition-colors"
               >
-                导出方案…
+                导出
               </button>
               <button
                 onClick={() => {
                   close();
                   void handleImportScheme();
                 }}
-                className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/70 transition-colors"
+                className="flex-1 px-1.5 py-1 text-xs text-center text-slate-300 hover:bg-slate-700/70 transition-colors"
               >
-                导入方案…
+                导入
               </button>
             </div>
           )}
@@ -691,7 +703,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
             onSelectMod={(key) => setConfigModKey(key)}
             controlled={{
               mods: displayMods,
-              groups: scheme.groups ?? [],
+              groups: visibleGroups,
               displayOrder: effectiveDisplayOrder,
               setGroups: handleGroupsChange,
               setDisplayOrder: handleDisplayOrderChange,

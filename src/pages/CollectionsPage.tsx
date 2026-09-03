@@ -172,6 +172,16 @@ export default function CollectionsPage({
     onSeedConsumed?.();
   }, [seed, create, onSeedConsumed, setSelectedId]);
 
+  // ★ v2.1: hide session groups whose members reference mods not installed
+  const clientModKeys = useMemo(
+    () => new Set(mods.map((m) => `${m.source}_${m.fileId}`)),
+    [mods],
+  );
+  const visibleSessionGroups = useMemo(
+    () => sessionGroups.filter((g) => g.modKeys.some((k) => clientModKeys.has(k))),
+    [sessionGroups, clientModKeys],
+  );
+
   const memberSet = useMemo(() => new Set(selected?.modKeys ?? []), [selected]);
   // ★ v2.1: effective member load sequence (legacy collections migrate on use)
   const colLoadOrder = useMemo(
@@ -409,15 +419,15 @@ export default function CollectionsPage({
             if (selectedId === id) setSelectedId(null);
           }}
           headerAction={(close) => (
-            <div className="px-2 py-1 border-b border-slate-700 space-y-0.5">
+            <div className="px-2 py-1.5 border-b border-slate-700 flex gap-1">
               <button
                 onClick={() => {
                   close();
                   setCreateOpen(true);
                 }}
-                className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-slate-700/70 transition-colors"
+                className="flex-1 px-1.5 py-1 text-xs text-center text-blue-400 hover:bg-slate-700/70 transition-colors"
               >
-                + 新建集合
+                新建
               </button>
               <button
                 onClick={() => {
@@ -425,31 +435,23 @@ export default function CollectionsPage({
                   void handleExportCollection();
                 }}
                 disabled={!selected}
-                className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/70 disabled:text-slate-600 disabled:hover:bg-transparent transition-colors"
+                className="flex-1 px-1.5 py-1 text-xs text-center text-slate-300 hover:bg-slate-700/70 disabled:text-slate-600 disabled:hover:bg-transparent transition-colors"
               >
-                导出集合…
+                导出
               </button>
               <button
                 onClick={() => {
                   close();
                   void handleImportCollection();
                 }}
-                className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/70 transition-colors"
+                className="flex-1 px-1.5 py-1 text-xs text-center text-slate-300 hover:bg-slate-700/70 transition-colors"
               >
-                导入集合…
+                导入
               </button>
             </div>
           )}
         />
 
-        {!createOpen && (
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="text-xs px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded cursor-pointer"
-          >
-            + 新建集合
-          </button>
-        )}
 
         {selected && (
           <>
@@ -514,7 +516,7 @@ export default function CollectionsPage({
             hideEnabledState
             controlled={{
               mods: memberMods,
-              groups: sessionGroups,
+              groups: visibleSessionGroups,
               displayOrder: sessionDisplayOrder,
               setGroups,
               setDisplayOrder,
