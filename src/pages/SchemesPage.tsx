@@ -13,6 +13,7 @@ import {
   analyzeCollectionMerge,
   mergeCollectionIntoScheme,
   ensureLoadOrder,
+  reorderDisabledToEnd,
   sanitizeSchemeName,
   dateDefaultName,
   type CollectionMergeConflict,
@@ -187,7 +188,10 @@ export default function SchemesPage({ mods, onActivate }: Props) {
         const enabledSet = new Set(prev.enabledMods ?? []);
         if (enabled) enabledSet.add(key);
         else enabledSet.delete(key);
-        const next = { ...prev, enabledMods: [...enabledSet] };
+        const enabledMods = [...enabledSet];
+        // ★ v2.1: disabled mods drop to the end of the load order, enabled shift up
+        const loadOrder = reorderDisabledToEnd(ensureLoadOrder(prev), enabledMods);
+        const next = { ...prev, enabledMods, loadOrder };
         void saveScheme(next).catch(() => {});
         return next;
       });

@@ -3,7 +3,7 @@ import { save, open as openDialog } from "@tauri-apps/plugin-dialog";
 import { writeFile, readFile } from "../lib/tauriApi";
 import { useCollectionStore } from "../store/useCollectionStore";
 import { useAppStore } from "../store/useAppStore";
-import { loadScheme, addModsToScheme, saveScheme, buildModMeta, buildModSettings, ensureLoadOrder, dateDefaultName } from "../utils/schemeMembers";
+import { loadScheme, addModsToScheme, saveScheme, buildModMeta, buildModSettings, ensureLoadOrder, reorderDisabledToEnd, dateDefaultName } from "../utils/schemeMembers";
 import { detectMissingMods } from "../utils/migrateProfile";
 import MissingModsDialog from "../components/ProfileManager/MissingModsDialog";
 import type { ModGroup, ModInfo, ModMeta, ModCollection } from "../lib/types";
@@ -226,7 +226,10 @@ export default function CollectionsPage({
         const base = new Set(c.enabledMods ?? c.modKeys);
         if (enabled) base.add(key);
         else base.delete(key);
-        return { ...c, enabledMods: [...base], updatedAt: new Date().toISOString() };
+        const enabledMods = [...base];
+        // ★ v2.1: disabled mods drop to the end of the load order, enabled shift up
+        const loadOrder = reorderDisabledToEnd(ensureLoadOrder(c), enabledMods);
+        return { ...c, enabledMods, loadOrder, updatedAt: new Date().toISOString() };
       });
       useCollectionStore.setState({ collections: updated });
       try { localStorage.setItem("twm-mod-collections", JSON.stringify(updated)); } catch { /* ignore */ }

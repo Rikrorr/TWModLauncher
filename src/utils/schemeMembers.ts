@@ -123,6 +123,20 @@ export function dateDefaultName(prefix: string): string {
   return `${prefix} ${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
 }
 
+/** Stable-partition a load order by enabled state: enabled mods first (relative
+ *  order preserved), disabled mods last (relative order preserved). Used when a
+ *  mod is toggled — a disabled mod drops to the end, enabled mods shift up. */
+export function reorderDisabledToEnd(
+  loadOrder: string[],
+  enabledMods: string[],
+): string[] {
+  const enabled = new Set(enabledMods);
+  return [
+    ...loadOrder.filter((k) => enabled.has(k)),
+    ...loadOrder.filter((k) => !enabled.has(k)),
+  ];
+}
+
 // ── ★ v2.1: independent load order ──────────────────────────────────────────
 
 /**
