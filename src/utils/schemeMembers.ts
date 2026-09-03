@@ -173,9 +173,10 @@ export function ensureLoadOrder(
 }
 
 /**
- * Dense 1..N order map over ALL read mod keys: scheme members follow their load
- * sequence first, remaining keys after by base order. Mirrors the game's own
- * renumbering so the relative load order survives.
+ * Dense 0..N-1 order map over ALL read mod keys: scheme members follow their load
+ * sequence first, remaining keys after by base order. The game's in-game mod
+ * manager numbers the load order from 0, so the write is 0-based too — the
+ * relative load order survives the game's own renumbering.
  */
 export function buildLoadOrderMap(
   allModKeys: string[],
@@ -183,7 +184,7 @@ export function buildLoadOrderMap(
 ): Map<string, number> {
   const seq = scheme ? ensureLoadOrder(scheme) : allModKeys;
   const full = [...seq, ...allModKeys.filter((k) => !seq.includes(k))];
-  return new Map(full.map((k, i) => [k, i + 1]));
+  return new Map(full.map((k, i) => [k, i]));
 }
 
 // ── Merge collection into scheme (with conflict analysis) ─────────────────
