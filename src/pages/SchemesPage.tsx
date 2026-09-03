@@ -469,9 +469,23 @@ export default function SchemesPage({ mods, onActivate }: Props) {
         setLastMessage(`导入失败: 方案版本不兼容（文件版本 ${parsed.version}，当前支持版本 2）`);
         return;
       }
+      // ★ v2.1: sanitize the imported name (Windows filename safety), ask first
+      const rawName = parsed.name;
+      const name = sanitizeSchemeName(rawName);
+      if (!name) {
+        setLastMessage("导入失败: 方案名仅含文件名非法字符");
+        return;
+      }
+      if (name !== rawName) {
+        const ok = await ask(
+          `方案名 "${rawName}" 包含文件名非法字符（如 / \\ : * ? " < > |），将以 "${name}" 导入。是否继续？`,
+          { title: "名称含非法字符", kind: "warning" },
+        );
+        if (!ok) return;
+      }
       const migrated: ProfileData = isProfileV2(parsed) ? parsed : migrateProfileV1(parsed);
       // ★ v2.1: normalize the current struct (loadOrder derived when absent)
-      const normalized: ProfileData = { ...migrated, loadOrder: ensureLoadOrder(migrated) };
+      const normalized: ProfileData = { ...migrated, name, loadOrder: ensureLoadOrder(migrated) };
       const existing = profiles.find((p) => p.name === normalized.name);
       if (existing) {
         const ok = await ask(`方案 "${normalized.name}" 已存在，是否覆盖？`, { title: "确认覆盖", kind: "warning" });
@@ -485,7 +499,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
         setImportMissingMods(missing);
         setLastMessage(`方案 "${normalized.name}" 已导入，但 ${missing.size} 个 Mod 缺失`);
       } else {
-        setLastMessage(`方案 "${normalized.name}" 已导入`);
+        setLastMessage(name !== rawName ? `方案 "${normalized.name}" 已导入（已移除文件名非法字符）` : `方案 "${normalized.name}" 已导入`);
       }
       void refresh();
     } catch (e) {
