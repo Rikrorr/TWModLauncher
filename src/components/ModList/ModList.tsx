@@ -302,10 +302,12 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     const allEnabled = selected.every((m) => m.enabled);
     const newEnabled = !allEnabled;
     for (const m of selected) {
-      useModStore.getState().toggleMod(m.fileId, newEnabled);
+      // ★ v2.1: use the controlled-aware toggle — writes the scheme/collection's
+      // own enabledMods, not the global mod store (batch toggle was broken there).
+      toggleMod(m.fileId, newEnabled);
     }
     if (!controlled) setDirty(true);
-  }, [selectedModKeys, setDirty]);
+  }, [selectedModKeys, toggleMod, setDirty, controlled]);
 
   const handleBatchSendToGroup = useCallback(
     (targetGroupId: string) => {
