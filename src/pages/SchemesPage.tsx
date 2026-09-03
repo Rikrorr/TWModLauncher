@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
-import { listProfiles, deleteProfile, saveProfile } from "../lib/tauriApi";
+import { ask, save, open as openDialog } from "@tauri-apps/plugin-dialog";
+import { listProfiles, deleteProfile, saveProfile, writeFile, readFile } from "../lib/tauriApi";
 import { useAppStore } from "../store/useAppStore";
 import { useCollectionStore } from "../store/useCollectionStore";
 import {
@@ -17,8 +17,8 @@ import {
   dateDefaultName,
   type CollectionMergeConflict,
 } from "../utils/schemeMembers";
-import { detectMissingMods } from "../utils/migrateProfile";
-import type { ModGroup, ModInfo, ModMeta, ModCollection, ProfileData, ProfileMeta } from "../lib/types";
+import { detectMissingMods, isProfileV2, migrateProfileV1 } from "../utils/migrateProfile";
+import type { ModGroup, ModInfo, ModMeta, ModCollection, ProfileData, ProfileDataV1, ProfileMeta } from "../lib/types";
 import ModActionMenu from "../components/common/ModActionMenu";
 import AddModPanel from "../components/common/AddModPanel";
 import ContainerSelect from "../components/common/ContainerSelect";
@@ -384,6 +384,105 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     [refresh, setLastMessage, setSelectedName],
   );
 
+  // ★ v2.1: apply the observation display order to the scheme load order
+  const handleApplyObservationOrder = useCallback(() => {
+    setScheme((prev) => {
+      if (!prev) return prev;
+      const memberSet = new Set(prev.modKeys ?? []);
+      const order: string[] = [];
+      for (const k of effectiveDisplayOrder) {
+        const g = prev.groups?.find((x) => x.id === k);
+        if (g) {
+          for (const mk of g.modKeys) {
+            if (memberSet.has(mk) && !order.includes(mk)) order.push(mk);
+          }
+        } else if (memberSet.has(k) && !order.includes(k)) {
+          order.push(k);
+        }
+      }
+      for (const mk of prev.modKeys ?? []) {
+        if (!order.includes(mk)) order.push(mk);
+      }
+      const out = { ...prev, loadOrder: order };
+      void saveScheme(out).catch(() => {});
+      setLastMessage("已将观测顺序应用到加载顺序");
+      return out;
+    });
+  }, [effectiveDisplayOrder, setLastMessage]);
+
+  // ★ v2.1: export the selected scheme as a JSON file
+  const handleExportScheme = useCallback(async () => {
+    if (!selectedName) {
+      setLastMessage("请先选择一个方案再导出");
+      return;
+    }
+    try {
+      const data = await loadScheme(selectedName);
+      if (!data) {
+        setLastMessage("方案读取失败");
+        return;
+      }
+      const noteCount = Object.keys(data.modNotes ?? {}).length;
+      const catCount = Object.keys(data.modCategories ?? {}).length;
+      if (noteCount > 0 || catCount > 0) {
+        const ok = await ask(
+          `该方案包含 ${noteCount} 条备注与 ${catCount} 个分类信息。备注可能含个人记录，导出/分享前请检查。`,
+          { title: "隐私提示", kind: "warning" },
+        );
+        if (!ok) return;
+      }
+      const path = await save({
+        defaultPath: `${selectedName}.json`,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (!path) return;
+      await writeFile(path, JSON.stringify(data, null, 2));
+      setLastMessage(`方案 "${selectedName}" 已导出`);
+    } catch (e) {
+      setLastMessage(`导出失败: ${String(e)}`);
+    }
+  }, [selectedName, setLastMessage]);
+
+  // ★ v2.1: import a scheme from a JSON file (v1 auto-migrated, version-checked)
+  const handleImportScheme = useCallback(async () => {
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (!selected) return;
+      const raw = await readFile(selected as string);
+      let parsed: ProfileData | ProfileDataV1;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        setLastMessage("导入失败: 文件格式无效，请确认选择的是 JSON 方案文件");
+        return;
+      }
+      if (!parsed.name || !Array.isArray(parsed.enabledMods)) {
+        setLastMessage("导入失败: 无效的方案文件");
+        return;
+      }
+      if (parsed.version !== undefined && parsed.version > 2) {
+        setLastMessage(`导入失败: 方案版本不兼容（文件版本 ${parsed.version}，当前支持版本 2）`);
+        return;
+      }
+      const migrated: ProfileData = isProfileV2(parsed) ? parsed : migrateProfileV1(parsed);
+      // ★ v2.1: normalize the current struct (loadOrder derived when absent)
+      const normalized: ProfileData = { ...migrated, loadOrder: ensureLoadOrder(migrated) };
+      const existing = profiles.find((p) => p.name === normalized.name);
+      if (existing) {
+        const ok = await ask(`方案 "${normalized.name}" 已存在，是否覆盖？`, { title: "确认覆盖", kind: "warning" });
+        if (!ok) return;
+      }
+      await saveProfile(normalized.name, JSON.stringify(normalized, null, 2));
+      setLastMessage(`方案 "${normalized.name}" 已导入`);
+      void refresh();
+    } catch (e) {
+      setLastMessage(`导入失败: ${String(e)}`);
+    }
+  }, [profiles, setLastMessage, refresh]);
+
   // ★ v3: "＋ 添加" menu — add mods or merge a whole collection
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [addCollectionOpen, setAddCollectionOpen] = useState(false);
@@ -460,12 +559,27 @@ export default function SchemesPage({ mods, onActivate }: Props) {
           onSelect={(name) => setSelectedName(name)}
           onDelete={(name) => void handleDelete(name)}
           headerAction={
-            <button
-              onClick={() => setCreateSchemeOpen(true)}
-              className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-slate-700/70 transition-colors"
-            >
-              + 新建方案
-            </button>
+            <div className="px-2 py-1 border-b border-slate-700 space-y-0.5">
+              <button
+                onClick={() => setCreateSchemeOpen(true)}
+                className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-slate-700/70 transition-colors"
+              >
+                + 新建方案
+              </button>
+              <button
+                onClick={() => void handleExportScheme()}
+                disabled={!selectedName}
+                className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/70 disabled:text-slate-600 disabled:hover:bg-transparent transition-colors"
+              >
+                导出方案…
+              </button>
+              <button
+                onClick={() => void handleImportScheme()}
+                className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/70 transition-colors"
+              >
+                导入方案…
+              </button>
+            </div>
           }
         />
 
@@ -573,6 +687,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
               addModsToSelection,
               lastClickedKey,
               setLastClickedKey,
+              onApplyOrder: handleApplyObservationOrder,
             }}
             modMenu={{
               schemes: profiles,

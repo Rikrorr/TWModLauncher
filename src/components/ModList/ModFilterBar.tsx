@@ -249,7 +249,7 @@ export default function ModFilterBar({
         {/* Apply order */}
         <button
           onClick={onApplyOrder}
-          title="将当前列表中已启用Mod的顺序同步为加载顺序（从0递增）"
+          title="将观测顺序应用到加载顺序（列表排列 → 加载序列）"
           className="text-xs px-2 py-1.5 border border-amber-600 rounded
                      text-amber-300 bg-amber-950/30 hover:bg-amber-900/40
                      cursor-pointer transition-colors shrink-0"

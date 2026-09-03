@@ -83,6 +83,8 @@ interface Props {
     /** ★ shift-range anchor (defaults to null in controlled mode). */
     lastClickedKey?: string | null;
     setLastClickedKey?: (key: string | null) => void;
+    /** ★ v2.1: apply the observation order (displayOrder linearized) to the load order. */
+    onApplyOrder?: () => void;
   };
 }
 
@@ -502,6 +504,12 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
   );
 
   const handleApplyOrder = useCallback(() => {
+    // ★ v2.1: container lists (scheme/collection) apply the observation order
+    // (displayOrder linearized) directly to their own load order.
+    if (controlled?.onApplyOrder) {
+      controlled.onApplyOrder();
+      return;
+    }
     const currentMods = mods;
     const keyModMap = new Map(currentMods.map((m) => [`${m.source}_${m.fileId}`, m]));
     const updates: [string, number][] = [];
@@ -549,7 +557,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     for (const [key, order] of updates) setModOrder(key, order);
     if (!controlled) setDirty(true);
     setLastMessage(`已应用加载顺序 — ${updates.length} 个已启用 Mod 从 0 递增`);
-  }, [displayOrder, groups, modGroupMap, setModOrder, setDirty, setLastMessage]);
+  }, [controlled, displayOrder, groups, modGroupMap, setModOrder, setDirty, setLastMessage]);
 
   // ── Drag refs (shared across all drag systems) ────────────────────────────
   const dragRefs: DragRefs = useMemo(() => createDragRefs(), []);

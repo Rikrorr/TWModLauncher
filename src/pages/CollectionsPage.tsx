@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { save, open as openDialog } from "@tauri-apps/plugin-dialog";
+import { writeFile, readFile } from "../lib/tauriApi";
 import { useCollectionStore } from "../store/useCollectionStore";
 import { useAppStore } from "../store/useAppStore";
 import { loadScheme, addModsToScheme, saveScheme, buildModMeta, buildModSettings, ensureLoadOrder, dateDefaultName } from "../utils/schemeMembers";
@@ -283,6 +285,82 @@ export default function CollectionsPage({
     [selected, clearSelection],
   );
 
+  // ★ v2.1: apply the observation display order to the collection load order
+  const handleApplyObservationOrder = useCallback(() => {
+    if (!selected) return;
+    const memberSet = new Set(selected.modKeys ?? []);
+    const order: string[] = [];
+    for (const k of sessionDisplayOrder) {
+      const g = sessionGroups.find((x) => x.id === k);
+      if (g) {
+        for (const mk of g.modKeys) {
+          if (memberSet.has(mk) && !order.includes(mk)) order.push(mk);
+        }
+      } else if (memberSet.has(k) && !order.includes(k)) {
+        order.push(k);
+      }
+    }
+    for (const mk of selected.modKeys ?? []) {
+      if (!order.includes(mk)) order.push(mk);
+    }
+    const store = useCollectionStore.getState();
+    const updated = store.collections.map((c) =>
+      c.id === selected.id
+        ? { ...c, loadOrder: order, updatedAt: new Date().toISOString() }
+        : c,
+    );
+    useCollectionStore.setState({ collections: updated });
+    try { localStorage.setItem("twm-mod-collections", JSON.stringify(updated)); } catch { /* ignore */ }
+    setLastMessage("已将观测顺序应用到加载顺序");
+  }, [selected, sessionDisplayOrder, sessionGroups, setLastMessage]);
+
+  // ★ v2.1: export the selected collection as a JSON file
+  const handleExportCollection = useCallback(async () => {
+    if (!selected) {
+      setLastMessage("请先选择一个集合再导出");
+      return;
+    }
+    const raw = useCollectionStore.getState().exportJson(selected.id);
+    if (!raw) {
+      setLastMessage("集合导出数据缺失");
+      return;
+    }
+    try {
+      const path = await save({
+        defaultPath: `${selected.name}.collection.json`,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (!path) return;
+      await writeFile(path, raw);
+      setLastMessage(`集合 "${selected.name}" 已导出`);
+    } catch (e) {
+      setLastMessage(`导出失败: ${String(e)}`);
+    }
+  }, [selected, setLastMessage]);
+
+  // ★ v2.1: import a collection from a JSON file
+  const handleImportCollection = useCallback(async () => {
+    try {
+      const picked = await openDialog({
+        multiple: false,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (!picked) return;
+      const raw = await readFile(picked as string);
+      const result = useCollectionStore.getState().importJson(raw);
+      if (!result.ok) {
+        setLastMessage(result.error ?? "导入失败");
+        return;
+      }
+      if (result.collection) {
+        setSelectedId(result.collection.id);
+      }
+      setLastMessage("集合已导入");
+    } catch (e) {
+      setLastMessage(`导入失败: ${String(e)}`);
+    }
+  }, [setSelectedId, setLastMessage]);
+
   const contextKeys = useMemo(() => (contextMenu ? [contextMenu.key] : []), [contextMenu]);
   const menuMod = useMemo(() => {
     if (!contextMenu) return undefined;
@@ -313,12 +391,27 @@ export default function CollectionsPage({
             if (selectedId === id) setSelectedId(null);
           }}
           headerAction={
-            <button
-              onClick={() => setCreateOpen(true)}
-              className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-slate-700/70 transition-colors"
-            >
-              + 新建集合
-            </button>
+            <div className="px-2 py-1 border-b border-slate-700 space-y-0.5">
+              <button
+                onClick={() => setCreateOpen(true)}
+                className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-slate-700/70 transition-colors"
+              >
+                + 新建集合
+              </button>
+              <button
+                onClick={() => void handleExportCollection()}
+                disabled={!selected}
+                className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/70 disabled:text-slate-600 disabled:hover:bg-transparent transition-colors"
+              >
+                导出集合…
+              </button>
+              <button
+                onClick={() => void handleImportCollection()}
+                className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/70 transition-colors"
+              >
+                导入集合…
+              </button>
+            </div>
           }
         />
 
@@ -407,6 +500,7 @@ export default function CollectionsPage({
               addModsToSelection,
               lastClickedKey,
               setLastClickedKey,
+              onApplyOrder: handleApplyObservationOrder,
             }}
             modMenu={{
               schemes: [],
