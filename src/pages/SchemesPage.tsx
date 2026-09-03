@@ -246,7 +246,9 @@ export default function SchemesPage({ mods, onActivate }: Props) {
       return next;
     });
     clearSelection();
-  }, [clearSelection]);
+    // ★ v2.1: refresh the dropdown count after removing members
+    void refresh();
+  }, [clearSelection, refresh]);
 
   // ★ v3: containerized groups / displayOrder (bound to the scheme data)
   // ★ v2.1: accept value-or-updater so sequential multi-key updates compose
@@ -531,8 +533,10 @@ export default function SchemesPage({ mods, onActivate }: Props) {
       setAddCollectionOpen(false);
       const skipped = mode === "partial" ? `（跳过 ${conflict.duplicateModKeys.length} 个重复 Mod）` : "";
       setLastMessage(`已从集合 "${col.name}" 合并${skipped}`);
+      // ★ v2.1: refresh the dropdown count after merging members
+      void refresh();
     },
-    [setLastMessage],
+    [setLastMessage, refresh],
   );
 
   const handleAddCollection = useCallback(
@@ -759,6 +763,8 @@ export default function SchemesPage({ mods, onActivate }: Props) {
               void saveScheme(next).catch(() => {});
               return next;
             });
+            // ★ v2.1: refresh the dropdown count after adding members
+            void refresh();
           }}
           onClose={() => setAddOpen(false)}
         />
