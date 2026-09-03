@@ -119,16 +119,6 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     [mods, memberSet],
   );
 
-  // ★ v2.1: hide groups whose members reference mods not installed in this client
-  const clientModKeys = useMemo(
-    () => new Set(mods.map((m) => `${m.source}_${m.fileId}`)),
-    [mods],
-  );
-  const visibleGroups = useMemo(
-    () => (scheme?.groups ?? []).filter((g) => g.modKeys.some((k) => clientModKeys.has(k))),
-    [scheme, clientModKeys],
-  );
-
   // ★ v2.1: effective member load sequence (migrates legacy schemes on first use)
   const effectiveLoadOrder = useMemo(() => (scheme ? ensureLoadOrder(scheme) : []), [scheme]);
   const loadPosMap = useMemo(() => {
@@ -703,7 +693,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
             onSelectMod={(key) => setConfigModKey(key)}
             controlled={{
               mods: displayMods,
-              groups: visibleGroups,
+              groups: scheme.groups ?? [],
               displayOrder: effectiveDisplayOrder,
               setGroups: handleGroupsChange,
               setDisplayOrder: handleDisplayOrderChange,

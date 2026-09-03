@@ -172,16 +172,6 @@ export default function CollectionsPage({
     onSeedConsumed?.();
   }, [seed, create, onSeedConsumed, setSelectedId]);
 
-  // ★ v2.1: hide session groups whose members reference mods not installed
-  const clientModKeys = useMemo(
-    () => new Set(mods.map((m) => `${m.source}_${m.fileId}`)),
-    [mods],
-  );
-  const visibleSessionGroups = useMemo(
-    () => sessionGroups.filter((g) => g.modKeys.some((k) => clientModKeys.has(k))),
-    [sessionGroups, clientModKeys],
-  );
-
   const memberSet = useMemo(() => new Set(selected?.modKeys ?? []), [selected]);
   // ★ v2.1: effective member load sequence (legacy collections migrate on use)
   const colLoadOrder = useMemo(
@@ -516,7 +506,7 @@ export default function CollectionsPage({
             hideEnabledState
             controlled={{
               mods: memberMods,
-              groups: visibleSessionGroups,
+              groups: sessionGroups,
               displayOrder: sessionDisplayOrder,
               setGroups,
               setDisplayOrder,
