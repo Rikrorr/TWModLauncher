@@ -180,7 +180,8 @@ export default function CollectionsPage({
   );
   const colLoadPosMap = useMemo(() => {
     const map = new Map<string, number>();
-    colLoadOrder.forEach((k, i) => map.set(k, i + 1));
+    // ★ v2.1: 0-based load order positions
+    colLoadOrder.forEach((k, i) => map.set(k, i));
     return map;
   }, [colLoadOrder]);
   const memberMods = useMemo(
@@ -238,18 +239,18 @@ export default function CollectionsPage({
   );
 
   // ★ v2.1: order mutations reposition the member within the load sequence
-  // (input N = move to 1-based position N; the mod at N and below shift +1)
+  // (input N = move to 0-based position N; the mod at N and below shift +1)
   const handleOrderChange = useCallback(
     (key: string, order: number) => {
       if (!selected) return;
       const cur = ensureLoadOrder(selected);
       const from = cur.indexOf(key);
       if (from === -1) return;
-      const target = Math.max(1, Math.min(cur.length, Math.round(order)));
-      if (target === from + 1) return;
+      const target = Math.max(0, Math.min(cur.length - 1, Math.round(order)));
+      if (target === from) return;
       const next = [...cur];
       next.splice(from, 1);
-      next.splice(target - 1, 0, key);
+      next.splice(target, 0, key);
       const store = useCollectionStore.getState();
       const updated = store.collections.map((c) =>
         c.id === selected.id
@@ -497,8 +498,8 @@ export default function CollectionsPage({
         ) : orderView === "load" ? (
           <LoadOrderList
             mods={colLoadMods}
-            onMoveUp={(key) => handleOrderChange(key, (colLoadPosMap.get(key) ?? 1) - 1)}
-            onMoveDown={(key) => handleOrderChange(key, (colLoadPosMap.get(key) ?? 1) + 1)}
+            onMoveUp={(key) => handleOrderChange(key, (colLoadPosMap.get(key) ?? 0) - 1)}
+            onMoveDown={(key) => handleOrderChange(key, (colLoadPosMap.get(key) ?? 0) + 1)}
             onMoveToPosition={(key, pos) => handleOrderChange(key, pos)}
             onToggle={handleToggleMember}
           />

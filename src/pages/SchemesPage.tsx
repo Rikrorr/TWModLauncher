@@ -124,7 +124,8 @@ export default function SchemesPage({ mods, onActivate }: Props) {
   const effectiveLoadOrder = useMemo(() => (scheme ? ensureLoadOrder(scheme) : []), [scheme]);
   const loadPosMap = useMemo(() => {
     const map = new Map<string, number>();
-    effectiveLoadOrder.forEach((k, i) => map.set(k, i + 1));
+    // ★ v2.1: 0-based load order positions (game write stays 1..N)
+    effectiveLoadOrder.forEach((k, i) => map.set(k, i));
     return map;
   }, [effectiveLoadOrder]);
 
@@ -200,18 +201,18 @@ export default function SchemesPage({ mods, onActivate }: Props) {
   );
 
   // ★ v2.1: order mutations reposition the member within the load sequence.
-  // Input N = move to 1-based position N — the mod at N and below shift +1.
+  // Input N = move to 0-based position N — the mod at N and below shift +1.
   const handleOrderChange = useCallback((key: string, order: number) => {
     setScheme((prev) => {
       if (!prev) return prev;
       const cur = ensureLoadOrder(prev);
       const from = cur.indexOf(key);
       if (from === -1) return prev;
-      const target = Math.max(1, Math.min(cur.length, Math.round(order)));
-      if (target === from + 1) return prev;
+      const target = Math.max(0, Math.min(cur.length - 1, Math.round(order)));
+      if (target === from) return prev;
       const next = [...cur];
       next.splice(from, 1);
-      next.splice(target - 1, 0, key);
+      next.splice(target, 0, key);
       const out = { ...prev, loadOrder: next };
       void saveScheme(out).catch(() => {});
       return out;

@@ -996,7 +996,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
                         e.stopPropagation();
                         clearSelection();
                         // ★ v2.1: position semantics — up = earlier (position -1)
-                        setModOrder(item.key, Math.max(1, mod.order - 1));
+                        setModOrder(item.key, Math.max(0, mod.order - 1));
                         if (!controlled) setDirty(true);
                       }}
                       onOrderDown={(e) => {
