@@ -16,8 +16,8 @@ interface Props {
   onSelect: (key: string) => void;
   /** Delete action rendered inside the dropdown (per option). */
   onDelete?: (key: string) => void;
-  /** Extra header action (e.g. new container). */
-  headerAction?: React.ReactNode;
+  /** Extra header action (e.g. new container). Receives a close() to dismiss the dropdown. */
+  headerAction?: (close: () => void) => React.ReactNode;
 }
 
 const PANEL_W = 288;
@@ -131,7 +131,7 @@ export default function ContainerSelect({
             style={{ left: pos.left, top: pos.top, width: PANEL_W }}
           >
             {headerAction && (
-              <div className="px-2 py-1 border-b border-slate-700">{headerAction}</div>
+              <div className="px-2 py-1 border-b border-slate-700">{headerAction(() => setOpen(false))}</div>
             )}
             <div className="max-h-64 overflow-y-auto">
               {options.length === 0 ? (

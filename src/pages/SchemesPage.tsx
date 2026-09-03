@@ -45,6 +45,8 @@ export default function SchemesPage({ mods, onActivate }: Props) {
   const [addOpen, setAddOpen] = useState(false);
   const [missingMods, setMissingMods] = useState<Map<string, ModMeta> | null>(null);
   const [pendingActivate, setPendingActivate] = useState<ProfileData | null>(null);
+  // ★ v2.1: missing-mod warning after importing a scheme (separate from activation)
+  const [importMissingMods, setImportMissingMods] = useState<Map<string, ModMeta> | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number; y: number; key: string; mod: ModInfo;
   } | null>(null);
@@ -476,12 +478,18 @@ export default function SchemesPage({ mods, onActivate }: Props) {
         if (!ok) return;
       }
       await saveProfile(normalized.name, JSON.stringify(normalized, null, 2));
-      setLastMessage(`方案 "${normalized.name}" 已导入`);
+      const missing = detectMissingMods(normalized, mods);
+      if (missing.size > 0) {
+        setImportMissingMods(missing);
+        setLastMessage(`方案 "${normalized.name}" 已导入，但 ${missing.size} 个 Mod 缺失`);
+      } else {
+        setLastMessage(`方案 "${normalized.name}" 已导入`);
+      }
       void refresh();
     } catch (e) {
       setLastMessage(`导入失败: ${String(e)}`);
     }
-  }, [profiles, setLastMessage, refresh]);
+  }, [profiles, mods, setLastMessage, refresh]);
 
   // ★ v3: "＋ 添加" menu — add mods or merge a whole collection
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -558,29 +566,38 @@ export default function SchemesPage({ mods, onActivate }: Props) {
           selectedKey={selectedName}
           onSelect={(name) => setSelectedName(name)}
           onDelete={(name) => void handleDelete(name)}
-          headerAction={
+          headerAction={(close) => (
             <div className="px-2 py-1 border-b border-slate-700 space-y-0.5">
               <button
-                onClick={() => setCreateSchemeOpen(true)}
+                onClick={() => {
+                  close();
+                  setCreateSchemeOpen(true);
+                }}
                 className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:bg-slate-700/70 transition-colors"
               >
                 + 新建方案
               </button>
               <button
-                onClick={() => void handleExportScheme()}
+                onClick={() => {
+                  close();
+                  void handleExportScheme();
+                }}
                 disabled={!selectedName}
                 className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/70 disabled:text-slate-600 disabled:hover:bg-transparent transition-colors"
               >
                 导出方案…
               </button>
               <button
-                onClick={() => void handleImportScheme()}
+                onClick={() => {
+                  close();
+                  void handleImportScheme();
+                }}
                 className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700/70 transition-colors"
               >
                 导入方案…
               </button>
             </div>
-          }
+          )}
         />
 
         {/* ★ v2.1: display-mode toggle — observation (groups) vs load order (flat) */}
@@ -897,6 +914,13 @@ export default function SchemesPage({ mods, onActivate }: Props) {
               setPendingActivate(null);
             }
           }}
+        />
+      )}
+
+      {importMissingMods && (
+        <MissingModsDialog
+          missing={importMissingMods}
+          onClose={() => setImportMissingMods(null)}
         />
       )}
     </div>

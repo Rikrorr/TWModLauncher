@@ -9,7 +9,6 @@ import type { ModInfo, ModGroup } from "../../lib/types";
 import ModCard from "./ModCard";
 import ModFilterBar from "./ModFilterBar";
 import ModGroupHeader from "./ModGroupHeader";
-import ModContextMenu from "./ModContextMenu";
 import GroupContextMenu from "./GroupContextMenu";
 import MultiContextMenu from "./MultiContextMenu";
 import CategoryPicker from "../common/CategoryPicker";
@@ -274,43 +273,6 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     [handleMoveToGroup, groups],
   );
 
-  const handleSendToGroup = useCallback(
-    (modKey: string, targetGroupId: string) => {
-      moveKeysToGroup([modKey], targetGroupId);
-    },
-    [moveKeysToGroup],
-  );
-
-  const handleCreateGroupAndSend = useCallback(
-    (modKey: string) => {
-      const newGroup: ModGroup = {
-        id: crypto.randomUUID(),
-        name: "新建分组",
-        collapsed: false,
-        modKeys: [modKey],
-      };
-      // Remove from old group and add to new group
-      setGroups((prev) => {
-        const updated = prev.map((g) => ({
-          ...g,
-          modKeys: g.modKeys.filter((k) => k !== modKey),
-        }));
-        return [...updated, newGroup];
-      });
-      // Insert group ID into displayOrder right before the mod key.
-      // The mod key stays — buildRenderItems skips it when the group renders.
-      setDisplayOrder((prev) => {
-        const modIdx = prev.indexOf(modKey);
-        if (modIdx === -1) return [...prev, newGroup.id];
-        const next = [...prev];
-        next.splice(modIdx, 0, newGroup.id);
-        return next;
-      });
-      // Trigger rename for the new group
-      setTimeout(() => setEditingGroupId(newGroup.id), 0);
-    },
-    [setGroups, setDisplayOrder],
-  );
 
   const handleUngroup = useCallback(
     async (groupId: string) => {
@@ -1184,42 +1146,6 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
             }
             onOpenExplorer={() => openInExplorer(mod.dirPath).catch((e) => setLastMessage(String(e)))}
             onOpenWorkshop={() => openSteamWorkshop(mod.fileId).catch((e) => setLastMessage(String(e)))}
-          />
-        );
-      })()}
-
-      {contextMenu?.type === "mod" && !modMenu && (() => {
-        const mod = mods.find((m) => `${m.source}_${m.fileId}` === contextMenu.key);
-        if (!mod) return null;
-        return (
-          <ModContextMenu
-            modKey={contextMenu.key}
-            mod={mod}
-            x={contextMenu.x}
-            y={contextMenu.y}
-            groups={groups}
-            currentGroupId={modGroupMap.get(contextMenu.key)}
-            onClose={() => setContextMenu(null)}
-            onToggle={handleToggle}
-            onSendToGroup={handleSendToGroup}
-            onCreateGroupAndSend={handleCreateGroupAndSend}
-            onOrderUp={() => {
-              clearSelection();
-              // ★ v2.1: position semantics — up = earlier (position -1)
-              setModOrder(contextMenu.key, Math.max(1, mod.order - 1));
-              if (!controlled) setDirty(true);
-            }}
-            onOrderDown={() => {
-              clearSelection();
-              // ★ v2.1: position semantics — down = later (position +1)
-              setModOrder(contextMenu.key, mod.order + 1);
-              if (!controlled) setDirty(true);
-            }}
-            onOpenInExplorer={() => openInExplorer(mod.dirPath).catch((e) => setLastMessage(String(e)))}
-            onOpenWorkshop={() => openSteamWorkshop(mod.fileId).catch((e) => setLastMessage(String(e)))}
-            onViewDetail={() => onSelectMod(contextMenu.key)}
-            onEditCategories={() => setModPopup({ modKey: contextMenu.key, kind: "category" })}
-            onEditNote={() => setModPopup({ modKey: contextMenu.key, kind: "note" })}
           />
         );
       })()}
