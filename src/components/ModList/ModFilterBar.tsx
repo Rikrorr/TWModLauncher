@@ -25,7 +25,7 @@ interface Props {
   userTagColors?: Record<string, string>;
   viewMode: ViewMode;
   onToggleViewMode: () => void;
-  onApplyOrder: () => void;
+  onApplyOrder?: () => void;
   onGroupCreateMouseDown: (e: React.MouseEvent) => void;
   /** ★ click-based group creation (container lists without drag-to-create). */
   onGroupCreateClick?: () => void;
@@ -246,7 +246,8 @@ export default function ModFilterBar({
           )}
         </div>
 
-        {/* Apply order */}
+        {/* Apply order — hidden on read-only browse pages (e.g. 已读取Mod) */}
+        {onApplyOrder && (
         <button
           onClick={onApplyOrder}
           title="将观测顺序应用到加载顺序（列表排列 → 加载序列）"
@@ -256,6 +257,7 @@ export default function ModFilterBar({
         >
           应用顺序
         </button>
+        )}
 
         {/* View mode toggle */}
         <button

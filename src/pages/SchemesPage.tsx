@@ -24,6 +24,7 @@ import ModActionMenu from "../components/common/ModActionMenu";
 import AddModPanel from "../components/common/AddModPanel";
 import ContainerSelect from "../components/common/ContainerSelect";
 import CreateDialog from "../components/common/CreateDialog";
+import RenameDialog from "../components/common/RenameDialog";
 import ModList from "../components/ModList/ModList";
 import LoadOrderList from "../components/Scheme/LoadOrderList";
 import SettingsEditor from "../components/SettingsEditor/SettingsEditor";
@@ -48,6 +49,8 @@ export default function SchemesPage({ mods, onActivate }: Props) {
   const [pendingActivate, setPendingActivate] = useState<ProfileData | null>(null);
   // ★ v2.1: missing-mod warning after importing a scheme (separate from activation)
   const [importMissingMods, setImportMissingMods] = useState<Map<string, ModMeta> | null>(null);
+  // ★ v2.1: rename target (old scheme name) for the rename dialog
+  const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number; y: number; key: string; mod: ModInfo;
   } | null>(null);
@@ -402,9 +405,15 @@ export default function SchemesPage({ mods, onActivate }: Props) {
       for (const k of effectiveDisplayOrder) {
         const g = prev.groups?.find((x) => x.id === k);
         if (g) {
-          for (const mk of g.modKeys) {
-            if (memberSet.has(mk) && !order.includes(mk)) order.push(mk);
-          }
+          // ★ v2.1: intra-group order follows displayOrder positions, not g.modKeys
+          const members = g.modKeys
+            .filter((mk) => memberSet.has(mk))
+            .sort((a, b) => {
+              const ia = effectiveDisplayOrder.indexOf(a);
+              const ib = effectiveDisplayOrder.indexOf(b);
+              return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib);
+            });
+          for (const mk of members) if (!order.includes(mk)) order.push(mk);
         } else if (memberSet.has(k) && !order.includes(k)) {
           order.push(k);
         }
@@ -514,6 +523,27 @@ export default function SchemesPage({ mods, onActivate }: Props) {
     }
   }, [profiles, mods, setLastMessage, refresh, setSelectedName]);
 
+  // ★ v2.1: rename the selected scheme (load → save with new name → delete old)
+  const handleRenameScheme = useCallback(async (newName: string) => {
+    if (!renameTarget) return;
+    const name = sanitizeSchemeName(newName);
+    if (!name) { setLastMessage("名称无效（仅含文件名非法字符）"); return; }
+    if (name === renameTarget) { setLastMessage("名称未变化"); return; }
+    if (profiles.some((p) => p.name === name)) { setLastMessage(`方案 "${name}" 已存在`); return; }
+    try {
+      const data = await loadScheme(renameTarget);
+      if (!data) { setLastMessage("原方案读取失败"); return; }
+      const renamed = { ...data, name };
+      await saveProfile(name, JSON.stringify(renamed, null, 2));
+      await deleteProfile(renameTarget);
+      if (selectedName === renameTarget) setSelectedName(name);
+      setLastMessage(`方案已重命名为 "${name}"`);
+      void refresh();
+    } catch (e) {
+      setLastMessage(`重命名失败: ${String(e)}`);
+    }
+  }, [renameTarget, profiles, selectedName, setSelectedName, setLastMessage, refresh]);
+
   // ★ v3: "＋ 添加" menu — add mods or merge a whole collection
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [addCollectionOpen, setAddCollectionOpen] = useState(false);
@@ -591,6 +621,7 @@ export default function SchemesPage({ mods, onActivate }: Props) {
           selectedKey={selectedName}
           onSelect={(name) => setSelectedName(name)}
           onDelete={(name) => void handleDelete(name)}
+          onRename={(name) => setRenameTarget(name)}
           headerAction={(close) => (
             <div className="px-2 py-1.5 border-b border-slate-700 flex gap-1">
               <button
@@ -948,6 +979,15 @@ export default function SchemesPage({ mods, onActivate }: Props) {
         <MissingModsDialog
           missing={importMissingMods}
           onClose={() => setImportMissingMods(null)}
+        />
+      )}
+
+      {renameTarget && (
+        <RenameDialog
+          title="重命名方案"
+          defaultValue={renameTarget}
+          onSubmit={(name) => void handleRenameScheme(name)}
+          onClose={() => setRenameTarget(null)}
         />
       )}
     </div>

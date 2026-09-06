@@ -13,6 +13,7 @@ import ModActionMenu from "../components/common/ModActionMenu";
 import AddModPanel from "../components/common/AddModPanel";
 import ContainerSelect from "../components/common/ContainerSelect";
 import CreateDialog from "../components/common/CreateDialog";
+import RenameDialog from "../components/common/RenameDialog";
 import SettingsEditor from "../components/SettingsEditor/SettingsEditor";
 
 interface Props {
@@ -52,6 +53,8 @@ export default function CollectionsPage({
   const [createOpen, setCreateOpen] = useState(false);
   // ★ v2.1: missing-mod warning after importing a collection
   const [importMissingMods, setImportMissingMods] = useState<Map<string, ModMeta> | null>(null);
+  // ★ v2.1: rename target (collection id) for the rename dialog
+  const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const setLastMessage = useAppStore((s) => s.setLastMessage);
   const seedHandledRef = useRef(false);
 
@@ -301,9 +304,15 @@ export default function CollectionsPage({
     for (const k of sessionDisplayOrder) {
       const g = sessionGroups.find((x) => x.id === k);
       if (g) {
-        for (const mk of g.modKeys) {
-          if (memberSet.has(mk) && !order.includes(mk)) order.push(mk);
-        }
+        // ★ v2.1: intra-group order follows displayOrder positions, not group order
+        const members = g.modKeys
+          .filter((mk) => memberSet.has(mk))
+          .sort((a, b) => {
+            const ia = sessionDisplayOrder.indexOf(a);
+            const ib = sessionDisplayOrder.indexOf(b);
+            return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib);
+          });
+        for (const mk of members) if (!order.includes(mk)) order.push(mk);
       } else if (memberSet.has(k) && !order.includes(k)) {
         order.push(k);
       }
@@ -383,6 +392,27 @@ export default function CollectionsPage({
     }
   }, [setSelectedId, setLastMessage, mods]);
 
+  // ★ v2.1: rename the selected collection (store + localStorage)
+  const handleRenameCollection = useCallback(
+    (newName: string) => {
+      if (!renameTarget) return;
+      const name = newName.trim();
+      if (!name) { setLastMessage("名称不能为空"); return; }
+      const store = useCollectionStore.getState();
+      const updated = store.collections.map((c) =>
+        c.id === renameTarget
+          ? { ...c, name, updatedAt: new Date().toISOString() }
+          : c,
+      );
+      useCollectionStore.setState({ collections: updated });
+      try {
+        localStorage.setItem("twm-mod-collections", JSON.stringify(updated));
+      } catch { /* ignore */ }
+      setLastMessage(`集合已重命名为 "${name}"`);
+    },
+    [renameTarget, setLastMessage],
+  );
+
   const contextKeys = useMemo(() => (contextMenu ? [contextMenu.key] : []), [contextMenu]);
   const menuMod = useMemo(() => {
     if (!contextMenu) return undefined;
@@ -412,6 +442,7 @@ export default function CollectionsPage({
             remove(id);
             if (selectedId === id) setSelectedId(null);
           }}
+          onRename={(id) => setRenameTarget(id)}
           headerAction={(close) => (
             <div className="px-2 py-1.5 border-b border-slate-700 flex gap-1">
               <button
@@ -673,6 +704,15 @@ export default function CollectionsPage({
         <MissingModsDialog
           missing={importMissingMods}
           onClose={() => setImportMissingMods(null)}
+        />
+      )}
+
+      {renameTarget && (
+        <RenameDialog
+          title="重命名集合"
+          defaultValue={collections.find((c) => c.id === renameTarget)?.name ?? ""}
+          onSubmit={(name) => handleRenameCollection(name)}
+          onClose={() => setRenameTarget(null)}
         />
       )}
     </div>

@@ -430,6 +430,9 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
 
   // ── Persist prefs ────────────────────────────────────────────────────────
   useEffect(() => {
+    // ★ v2.1: container lists (scheme/collection) own their groups/order in their
+    // own data — don't pollute the global prefs that the 已读取Mod page reads.
+    if (controlled) return;
     try {
       localStorage.setItem(
         "twm-filter-prefs",
@@ -444,7 +447,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
     } catch {
       /* ignore */
     }
-  }, [filter.activeCategories, filter.tagMode, filter.viewMode, groups, displayOrder]);
+  }, [controlled, filter.activeCategories, filter.tagMode, filter.viewMode, groups, displayOrder]);
 
   const handleOrderChange = useCallback(
     (key: string, order: number) => {
@@ -883,7 +886,7 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
         onToggleViewMode={() =>
           filter.setViewMode((v) => (v === "detailed" ? "compact" : "detailed"))
         }
-        onApplyOrder={readOnly ? () => {} : handleApplyOrder}
+        onApplyOrder={readOnly ? undefined : handleApplyOrder}
         onGroupCreateMouseDown={handleGroupCreateMouseDown}
         hideGroupCreate={readOnly}
       />
@@ -1200,6 +1203,20 @@ export default function ModList({ saving, onSelectMod, onSaveSelectionAsCollecti
                 ? "移出集合"
                 : undefined
           }
+          schemes={modMenu?.schemes}
+          collections={modMenu?.collections}
+          onAddToScheme={
+            modMenu?.onAddToScheme
+              ? (name) => modMenu.onAddToScheme!(name, selectedModKeys)
+              : undefined
+          }
+          onAddToCollection={
+            modMenu?.onAddToCollection
+              ? (id) => modMenu.onAddToCollection!(id, selectedModKeys)
+              : undefined
+          }
+          onCreateScheme={modMenu?.onCreateScheme}
+          onCreateCollection={modMenu?.onCreateCollection}
         />
         );
       })()}

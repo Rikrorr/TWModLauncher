@@ -16,6 +16,8 @@ interface Props {
   onSelect: (key: string) => void;
   /** Delete action rendered inside the dropdown (per option). */
   onDelete?: (key: string) => void;
+  /** ★ v2.1: rename action rendered inside the dropdown (per option). */
+  onRename?: (key: string) => void;
   /** Extra header action (e.g. new container). Receives a close() to dismiss the dropdown. */
   headerAction?: (close: () => void) => React.ReactNode;
 }
@@ -31,6 +33,7 @@ export default function ContainerSelect({
   selectedKey,
   onSelect,
   onDelete,
+  onRename,
   headerAction,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -158,6 +161,18 @@ export default function ContainerSelect({
                       </span>
                       {typeof o.count === "number" && (
                         <span className="text-slate-500 shrink-0">{o.count} Mod</span>
+                      )}
+                      {onRename && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRename(o.key);
+                          }}
+                          title="重命名"
+                          className="text-[10px] px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded shrink-0 cursor-pointer"
+                        >
+                          改名
+                        </button>
                       )}
                       {onDelete && (
                         <button
