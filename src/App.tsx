@@ -692,7 +692,6 @@ function App() {
                   onRefresh={() => void handleRefresh()}
                   onSelectMod={handleSelectMod}
                   onSaveSelectionAsCollection={handleSaveSelectionAsCollection}
-                  onSettingsSaved={() => {}}
                 />
               )}
 

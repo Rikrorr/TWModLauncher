@@ -5,7 +5,8 @@ import SettingsEditor from "../components/SettingsEditor/SettingsEditor";
 import { useModStore } from "../store/useModStore";
 import { useAppStore } from "../store/useAppStore";
 import { useCollectionStore } from "../store/useCollectionStore";
-import { listProfiles } from "../lib/tauriApi";
+import { listProfiles, writeSettingsFile } from "../lib/tauriApi";
+import { generateSettingsLua } from "../utils/generateModSettings";
 import { loadScheme, addModsToScheme, saveScheme, buildModMeta, buildModSettings } from "../utils/schemeMembers";
 import { createLogger } from "../lib/logger";
 
@@ -16,7 +17,6 @@ interface Props {
   onRefresh?: () => void;
   onSelectMod: (key: string) => void;
   onSaveSelectionAsCollection: () => void;
-  onSettingsSaved: (key: string, settings: Record<string, unknown>) => void;
 }
 
 const log = createLogger("ModsPage");
@@ -29,13 +29,10 @@ export default function ModsPage({
   onRefresh,
   onSelectMod,
   onSaveSelectionAsCollection,
-  onSettingsSaved,
 }: Props) {
   const selectedModKey = useModStore((s) => s.selectedModKey);
   const selectMod = useModStore((s) => s.selectMod);
   const updateModSettings = useModStore((s) => s.updateModSettings);
-  const addDirtyModSetting = useAppStore((s) => s.addDirtyModSetting);
-  const setDirty = useAppStore((s) => s.setDirty);
   const setLastMessage = useAppStore((s) => s.setLastMessage);
   const collections = useCollectionStore((s) => s.collections);
   const addModsToCollection = useCollectionStore((s) => s.addModsToCollection);
@@ -147,9 +144,13 @@ export default function ModsPage({
               onClose={() => selectMod(null)}
               onSettingsSaved={(settings) => {
                 updateModSettings(selectedModKey!, settings);
-                addDirtyModSetting(selectedModKey!);
-                setDirty(true);
-                onSettingsSaved(selectedModKey!, settings);
+                // ★ v2.2: instant-save — write this mod's Settings.Lua to disk now,
+                // no deferred dirty state / exit confirmation prompt.
+                if (selectedMod?.dirPath) {
+                  const raw = generateSettingsLua(settings);
+                  writeSettingsFile(selectedMod.dirPath, raw)
+                    .catch((e) => setLastMessage(`配置保存失败: ${String(e)}`));
+                }
               }}
             />
           </div>
